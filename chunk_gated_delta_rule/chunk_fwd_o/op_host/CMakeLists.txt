@@ -12,23 +12,11 @@ if (BUILD_OPEN_PROJECT)
     target_sources(op_host_aclnnExc PRIVATE
         chunk_fwd_o_def.cpp
     )
-endif()
-
-# if (BUILD_OPS_RTY_KERNEL)
-#     add_ops_compile_options(
-#         OP_NAME ChunkFwdO
-#         OPTIONS --cce-auto-sync=off
-#                 -Wno-deprecated-declarations
-#                 -Werror
-#     )
-# else()
-#     add_modules_sources(OPTYPE chunk_fwd_o ACLNNTYPE aclnn)
-# endif()
+endif()	
 
 add_modules_sources(OPTYPE chunk_fwd_o ACLNNTYPE aclnn_exclude)
 add_ops_compile_options(
     OP_NAME ChunkFwdO
     OPTIONS --cce-auto-sync=off
             -Wno-deprecated-declarations
-            -Werror
 )
