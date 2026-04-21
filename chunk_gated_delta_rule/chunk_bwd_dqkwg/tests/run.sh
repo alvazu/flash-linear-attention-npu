@@ -1,5 +1,5 @@
 # source /root/data_nvme0n1/huangjunzhe/Ascend/ascend-toolkit/set_env.sh
-ascend_path="/data/huangjunzhe/Ascend/cann-9.0.0/"
+ascend_path="/data/huangjunzhe/Ascend.GDN/cann-9.0.0"
 # ascend_path="/data/huangjunzhe/Ascend/cann-9.0.0"
 test_script_path=$(cd "$(dirname "$0")" && pwd)
 # echo "[run.sh] test_script_path: ${test_script_path}"

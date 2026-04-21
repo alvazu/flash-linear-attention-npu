@@ -95,7 +95,8 @@ def chunk_bwd_dqkwg_cpu(
     do.to(torch.float32)
     h.to(torch.float32)
     dh.to(torch.float32)
-    w.to(torch.float32)
+    # w.to(torch.float32)
+    
     g.to(torch.float32)
     dv.to(torch.float32)
     B, T, H, K = q.shape
@@ -109,7 +110,9 @@ def chunk_bwd_dqkwg_cpu(
     dq = torch.zeros_like(q)
     dk = torch.zeros_like(k)
     dg = torch.zeros_like(g) if g is not None else None
-    dw = torch.zeros_like(w) if w is not None else None
+    dw = torch.zeros_like(q)
+    w = torch.zeros_like(q)
+
     
     # 辅助函数：处理单个序列的逻辑
     def process_sequence(b_idx, t_start, t_end, seq_idx_in_batch, chunk_start_idx):

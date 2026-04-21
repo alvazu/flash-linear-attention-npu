@@ -50,6 +50,8 @@ aclnnStatus aclnnChunkBwdDqkwgGetWorkspaceSize(
     const aclTensor *gGamma,
     float scale,
     int64_t chunkSize,
+    bool use_exp2,
+    bool transpose_state_layout,
     const aclTensor *dqOut,
     const aclTensor *dkOut,
     const aclTensor *dwOut,

@@ -46,6 +46,8 @@ if __name__ == "__main__":
         [1,32,65536,64,torch.bfloat16,torch.bfloat16,0.32,case_extra_info.pj_cu_seqlens,128,128],  #23 [0,16,128] [0,16,135,512]
         [1,32,65536,128,torch.bfloat16,torch.bfloat16,0.32,case_extra_info.pj_cu_seqlens,128,128],  #24 [0,16,128] [0,16,135,512]
         [2,4,512,128,torch.bfloat16,torch.float32,0.088,None,128,256],  #25 [0,16,128] [0,16,135,512]
+        [1,8,1024,64,torch.bfloat16,torch.float32,0.088, [0, 57, 143, 187, 197, 227],128,128],  #26 [0,16,128] [0,16,135,512]
+
     ]
     device_id = 4
     

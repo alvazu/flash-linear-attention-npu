@@ -25,7 +25,7 @@ custom:
     op_api: all_version
   - func: npu_prepare_wy_repr_bwd_da(Tensor k, Tensor v, Tensor beta, Tensor A, Tensor dw, Tensor du, Tensor g, *, int chunk_size, int[]? cu_seqlens=None, int[]? chunk_indices=None) -> Tensor
     op_api: all_version
-  - func: npu_chunk_bwd_dqkwg(Tensor q, Tensor k, Tensor v, Tensor g, Tensor h, Tensor dox, Tensor dh, Tensor dv, int chunk_size, *, int[]? cu_seqlens=None, int[]? chunk_indices=None, Tensor? w=None, Tensor? g_gamma=None, float? scale=None, bool? transpose_state_layout=None) -> (Tensor, Tensor, Tensor, Tensor)
+  - func: npu_chunk_bwd_dqkwg(Tensor q, Tensor k, Tensor v, Tensor g, Tensor h, Tensor dox, Tensor dh, Tensor dv, int chunk_size, *, int[]? cu_seqlens=None, int[]? chunk_indices=None, Tensor? w=None, Tensor? g_gamma=None, float? scale=None, bool? use_exp2=None, bool? transpose_state_layout=None) -> (Tensor, Tensor, Tensor, Tensor)
     op_api: all_version
   - func: npu_chunk_fwd_o(Tensor q, Tensor k, Tensor v, Tensor h, Tensor g, float scale, *, Tensor? cu_seqlens=None, Tensor? chunk_indices=None, int? chunk_size=None) -> Tensor
     op_api: all_version
