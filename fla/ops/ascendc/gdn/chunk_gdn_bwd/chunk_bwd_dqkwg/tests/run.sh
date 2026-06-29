@@ -86,8 +86,8 @@ for name in "${names[@]}"; do
     (
         echo "Processing dual $name..."
         ct dual ${data_path}/${caseid}/out/${name}_npu.pt \
-                ${data_path}/${caseid}/out/${name}_cpu.pt \
                 ${data_path}/${caseid}/out/${name}_cpu_benchmark.pt \
+                ${data_path}/${caseid}/out/${name}_cpu.pt \
                 --out_dir ${data_path}/${caseid} \
                 > ${data_path}/${caseid}/${name}.txt 2>&1
     ) &
