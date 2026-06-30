@@ -1,18 +1,18 @@
 [
   {
     "name": "case1_current_default",
-    "description": "Current flash_gated_delta_rule Example/ST smoke shape with cached CPU output accuracy check.",
+    "description": "Current flash_gated_delta_rule Example/ST smoke shape with explicit uneven TND output accuracy check.",
     "script": "examples/flash_gated_delta_rule.py",
     "enabled": true,
     "B": 1,
-    "T": 65536,
+    "T": 4087,
     "chunk_size": 64,
     "query_head": 32,
     "value_head": 32,
     "Kdim": 128,
     "Vdim": 128,
     "dtype": "bf16",
-    "mean_len": 1024,
+    "mean_len": 341,
     "gate_source": "g",
     "gate_function": "logsigmoid",
     "varlen": true,
@@ -25,7 +25,9 @@
       "20260630",
       "--accuracy-check",
       "--accuracy-tensors",
-      "o"
+      "o",
+      "--cu-seqlens",
+      "0,2049,3060,3573,3829,3957,4022,4054,4070,4077,4081,4086,4087"
     ]
   },
   {
