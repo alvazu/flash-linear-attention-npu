@@ -116,7 +116,9 @@
       "0.1",
       "--cu-seqlens",
       "0,1024,2048,3991",
-      "--accuracy-check"
+      "--accuracy-check",
+      "--accuracy-tensors",
+      "o"
     ]
   }
 ]
