@@ -132,6 +132,7 @@ public:
     uint32_t chunkSize;
     bool useInitialState;
     bool storeFinalState;
+    bool hasGk;
     uint32_t isVariedLen;
     uint32_t shapeBatch;
     uint32_t tokenBatch;
@@ -145,6 +146,7 @@ public:
     AscendC::GlobalTensor<ElementW> gmW;
     AscendC::GlobalTensor<ElementU> gmU;
     AscendC::GlobalTensor<ElementG> gmG;
+    AscendC::GlobalTensor<ElementG> gmGk;
     AscendC::GlobalTensor<ElementInitialState> gmInitialState;
     AscendC::GlobalTensor<ElementH> gmH;
     AscendC::GlobalTensor<ElementV> gmV;
@@ -173,7 +175,7 @@ public:
 
     __aicore__ inline GDNFwdHKernel() {}
 
-    __aicore__ inline void Init(GM_ADDR k, GM_ADDR w, GM_ADDR u, GM_ADDR g, GM_ADDR inital_state, GM_ADDR cu_seqlens, GM_ADDR chunk_indices,
+    __aicore__ inline void Init(GM_ADDR k, GM_ADDR w, GM_ADDR u, GM_ADDR g, GM_ADDR gk, GM_ADDR inital_state, GM_ADDR cu_seqlens, GM_ADDR chunk_indices,
         GM_ADDR h, GM_ADDR v_new, GM_ADDR final_state, GM_ADDR tiling, GM_ADDR user) {
 
         __gm__ ChunkGatedDeltaRuleFwdHTilingData *__restrict gdnFwdHTilingData = reinterpret_cast<__gm__ ChunkGatedDeltaRuleFwdHTilingData *__restrict>(tiling);
@@ -187,6 +189,7 @@ public:
         chunkSize = gdnFwdHTilingData->chunkSize;
         useInitialState = gdnFwdHTilingData->useInitialState;
         storeFinalState = gdnFwdHTilingData->storeFinalState;
+        hasGk = gdnFwdHTilingData->hasGk;
         isVariedLen = gdnFwdHTilingData->isVariedLen;
         shapeBatch = gdnFwdHTilingData->shapeBatch;
         tokenBatch = gdnFwdHTilingData->tokenBatch;
@@ -200,6 +203,7 @@ public:
         gmW.SetGlobalBuffer((__gm__ ElementW *)w);
         gmU.SetGlobalBuffer((__gm__ ElementU *)u);
         gmG.SetGlobalBuffer((__gm__ ElementG *)g);
+        gmGk.SetGlobalBuffer((__gm__ ElementG *)gk);
         gmInitialState.SetGlobalBuffer((__gm__ ElementInitialState *)inital_state);
         gmH.SetGlobalBuffer((__gm__ ElementH *)h);
         gmV.SetGlobalBuffer((__gm__ ElementV *)v_new);
@@ -257,7 +261,8 @@ public:
                         }
 
                         const GDNFwdHOffsets& cube1Offsets = cubeBlockScheduler.GetCurTaskOffsets(stream);
-                        Arch::CrossCoreWaitFlag(cubeBlockScheduler.vec2Done[i]);
+                        uint32_t streamId = cube1Offsets.streamId;
+                        Arch::CrossCoreWaitFlag(cubeBlockScheduler.vec2Done[streamId]);
                         auto vLayout = tla::MakeLayout<ElementVWork, LayoutV>(cube1Offsets.blockTokens, vHeadDim);
                         int64_t cube1OffsetW = cube1Offsets.wOffset;
                         int64_t cube1OffsetH = cube1Offsets.hSrcOffset;
@@ -273,7 +278,7 @@ public:
                         blockMmadWH.preSetFlags();
                         blockMmadWH(tensorBlockW, tensorBlockH, tensorV, cube1Shape);
                         blockMmadWH.finalWaitFlags();
-                        Arch::CrossCoreSetFlag<0x2, PIPE_FIX>(cubeBlockScheduler.cube1Done);
+                        Arch::CrossCoreSetFlag<0x2, PIPE_FIX>(cubeBlockScheduler.cube1Done[streamId]);
                     }
                 } else {
                     /* C2: h[i+1] = k.T @ v_work */
@@ -283,7 +288,8 @@ public:
                             continue;
                         }
                         const GDNFwdHOffsets& cube2Offsets = cubeBlockScheduler.GetCurTaskOffsets(stream);
-                        Arch::CrossCoreWaitFlag(cubeBlockScheduler.vec1Done);
+                        uint32_t streamId = cube2Offsets.streamId;
+                        Arch::CrossCoreWaitFlag(cubeBlockScheduler.vec1Done[streamId]);
 
                         if (cubeBlockScheduler.NeedProcessStage2(stream)) {
                             // step 3: h[i+1] = k.T @ v_work
@@ -303,7 +309,7 @@ public:
                             blockMmadKV(tensorBlockK, tensorVwork, tensorHwork, cube2Shape);
                             blockMmadKV.finalWaitFlags();
                         }
-                        Arch::CrossCoreSetFlag<0x2, PIPE_FIX>(cubeBlockScheduler.cube2Done);
+                        Arch::CrossCoreSetFlag<0x2, PIPE_FIX>(cubeBlockScheduler.cube2Done[streamId]);
                     }
                 }
                 currStage ^= 0x01;
@@ -418,8 +424,9 @@ public:
                             gmV[vec1Offsets.uvOffset], gmVUpdateWorkspace[vec1Offsets.vWorkOffset], l1VUpdate,
                             gmG[vec1Offsets.gOffset], gmU[vec1Offsets.uvOffset], gmVWorkspace[vec1Offsets.vWorkOffset],
                             vec1Offsets.blockTokens, kHeadDim, vHeadDim,
-                            vecBlockScheduler.cube1Done, vecBlockScheduler.vec1Done,
-                            vec1Offsets.isInitialState, vec1Offsets.isFinalState, storeFinalState, (i == 0)
+                            vecBlockScheduler.cube1Done[vec1Offsets.streamId],
+                            vecBlockScheduler.vec1Done[vec1Offsets.streamId],
+                            vec1Offsets.isInitialState, vec1Offsets.isFinalState, storeFinalState, hasGk, (i == 0)
                         );
                     }
                 } else {
@@ -435,16 +442,18 @@ public:
                             // step 4:  h[i+1] += h_work if i < num_chunks - 1 else None
                             epilogueGDNFwdHUpdate(
                                 gmH[vec2Offsets.hDstOffset], gmFinalState[vec2Offsets.finalStateOffset],
-                                gmG[vec2Offsets.gOffset],
+                                gmG[vec2Offsets.gOffset], gmGk[vec2Offsets.gOffset * kHeadDim],
                                 gmH[vec2Offsets.hSrcOffset],
                                 gmHWorkspace[vec2Offsets.hWorkOffset],
-                                vec2Offsets.blockTokens, kHeadDim, vHeadDim, vecBlockScheduler.cube2Done,
-                                vec2Offsets.isInitialState, vec2Offsets.isFinalState, storeFinalState, (i == 0)
+                                vec2Offsets.blockTokens, kHeadDim, vHeadDim,
+                                vecBlockScheduler.cube2Done[vec2Offsets.streamId],
+                                vec2Offsets.isInitialState, vec2Offsets.isFinalState, storeFinalState, hasGk, (i == 0)
                             );
                         } else {
-                            Arch::CrossCoreWaitFlag(vecBlockScheduler.cube2Done);
+                            Arch::CrossCoreWaitFlag(vecBlockScheduler.cube2Done[vec2Offsets.streamId]);
                         }
-                        Arch::CrossCoreSetFlag<0x2, PIPE_MTE3>(vecBlockScheduler.vec2Done[i]);
+                        Arch::CrossCoreBarrier<0x1, PIPE_MTE3>();
+                        Arch::CrossCoreSetFlag<0x2, PIPE_MTE3>(vecBlockScheduler.vec2Done[vec2Offsets.streamId]);
                     }
                 }
                 currStage ^= 0x01;

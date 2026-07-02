@@ -53,6 +53,7 @@ struct GDNFwdHOffsets {
     bool isInitialState;
     bool isFinalState;
     uint32_t blockTokens;
+    uint32_t streamId;
     // for debug
     uint32_t batchIdx;
     uint32_t headIdx;
@@ -122,10 +123,10 @@ struct BlockSchedulerGdnFwdH {
     AscendC::GlobalTensor<int64_t> gmNumSeq;
     AscendC::GlobalTensor<int64_t> gmNumChunks;
 
-    Arch::CrossCoreFlag cube1Done{0};
-    Arch::CrossCoreFlag vec1Done{1};
-    Arch::CrossCoreFlag cube2Done{2};
-    Arch::CrossCoreFlag vec2Done[PING_PONG_STAGES] = {3, 4};
+    Arch::CrossCoreFlag cube1Done[PING_PONG_STAGES] = {0, 1};
+    Arch::CrossCoreFlag vec1Done[PING_PONG_STAGES] = {2, 3};
+    Arch::CrossCoreFlag cube2Done[PING_PONG_STAGES] = {4, 5};
+    Arch::CrossCoreFlag vec2Done[PING_PONG_STAGES] = {6, 7};
 
     CATLASS_DEVICE
     BlockSchedulerGdnFwdH() {}
@@ -238,6 +239,7 @@ struct BlockSchedulerGdnFwdH {
         offset.hWorkOffset = (cubeCoreIdx * PING_PONG_STAGES + streamId) * kHeadDim * vHeadDim;
         offset.vWorkOffset = (cubeCoreIdx * PING_PONG_STAGES + streamId) * chunkSize * vHeadDim;
         offset.blockTokens = offset.isFinalState ? (stream.batchTokens - stream.chunkIdx * chunkSize) : chunkSize;
+        offset.streamId = streamId;
         offset.batchIdx = stream.batchIdx;
         offset.headIdx = stream.vHeadIdx;
         offset.chunkIdx = stream.chunkIdx;
@@ -336,7 +338,10 @@ struct BlockSchedulerGdnFwdHVec : public BlockSchedulerGdnFwdH {
 
     CATLASS_DEVICE
     void Init(GM_ADDR cu_seqlens, GM_ADDR chunk_indices, GM_ADDR tiling, GM_ADDR user) {
-        BlockSchedulerGdnFwdH::Init(cu_seqlens, chunk_indices, tiling, user, AscendC::GetBlockIdx() / AscendC::GetSubBlockNum(), AscendC::GetBlockNum());
+        BlockSchedulerGdnFwdH::Init(
+            cu_seqlens, chunk_indices, tiling, user,
+            AscendC::GetBlockIdx() / AscendC::GetSubBlockNum(),
+            AscendC::GetBlockNum());
     }
 
 };
