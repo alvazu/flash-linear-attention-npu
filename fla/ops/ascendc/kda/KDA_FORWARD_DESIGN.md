@@ -95,9 +95,9 @@ BNSD 和 NTD 是性能布局，适用于上游 causal conv 已经完成数据排
 3. 对 BNSD/NTD，NTD reshape 为 `[1, HV, T, D]` view 后直接进入 kernel，不触发布局转换。
 4. 对 BSND/TND，TND reshape 为 `[1, T, H, D]` 后通过 `KdaLayoutSwap12` 转成 BNSD。
 5. 如有需要，将 `gk/beta` cast 到 `fp32`。
-6. 根据场景选择 dispatch：
-   - 大 shape half/bfloat16 且 `chunk_size=64` 时走 split forward 路径；
-   - 小 shape 或 `fp32` 场景走 monolithic `ChunkKdaFwd` 路径。
+6. 根据 `useSplitForward` 选择 dispatch：
+   - `useSplitForward=true` 表示走 split forward 路径，当前触发条件为 `q` dtype 不是 `fp32`、`chunk_size == 64` 且 `K * V >= 8192`。该路径把一次 KDA 正向拆成多个 L0 调用，以便复用 cube/向量主路径、GDN 状态传播和独立后处理。
+   - `useSplitForward=false` 表示走 monolithic `ChunkKdaFwd(stage=0)` 路径，用于小 shape 或 `fp32` 场景。
 7. 对 BNSD/NTD，split 路径的临时输出 copy 回相同 layout 的用户输出。对 BSND/TND，将 BNSD 中间结果转回公开输出 layout。
 
 split 路径包含三个 `ChunkKdaFwd` 阶段以及一次 GDN 状态传播：
@@ -109,7 +109,7 @@ stage 2: 计算 output cube 主路径和最终 o 行
 stage 3: 启用 post-WU cube 时后处理 w/kg/u
 ```
 
-目标 split forward 路径中，L2 对 L0 接口的拼接关系如下。小 shape 或 `fp32` fallback 路径不拆 stage，直接调用 `ChunkKdaFwd(stage=0)` 一次性产出同一组输出。
+目标 split forward 路径中，L2 对 L0 接口的拼接关系如下。小 shape 或 `fp32` fallback 路径在完成 layout/cast 后不拆 stage，直接调用 `ChunkKdaFwd(stage=0)` 一次性产出同一组输出。
 
 ```mermaid
 flowchart LR
@@ -119,7 +119,7 @@ flowchart LR
     SwapIn --> CastGate["L0: Cast<br/>gk/beta -> fp32"]
     ViewIn --> CastGate
 
-    CastGate --> S1["L0: ChunkKdaFwd(stage=1)<br/>产出 Aqk/Akk/w/u/qg/kg"]
+    CastGate -->|useSplitForward=true| S1["L0: ChunkKdaFwd(stage=1)<br/>产出 Aqk/Akk/w/u/qg/kg"]
     S1 --> AqkScale["L0: Muls<br/>Aqk * scale"]
     S1 --> S3["L0: ChunkKdaFwd(stage=3)<br/>post-WU 后处理"]
     S3 --> CastW["L0: Cast<br/>w -> fwd_h dtype"]
@@ -141,7 +141,7 @@ flowchart LR
     WriteState --> OutState["输出: h/v_new"]
     FwdH --> OutFinal["输出: final_state"]
 
-    Prep -->|fallback| S0["L0: ChunkKdaFwd(stage=0)<br/>monolithic path"]
+    CastGate -->|useSplitForward=false| S0["L0: ChunkKdaFwd(stage=0)<br/>monolithic path"]
     S0 --> OutAll["输出: o/final_state/Aqk/Akk/w/u/qg/kg/v_new/h"]
 ```
 
