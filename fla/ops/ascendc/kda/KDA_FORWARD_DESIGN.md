@@ -97,6 +97,7 @@ BNSD 和 NTD 是性能布局，适用于上游 causal conv 已经完成数据排
 5. 如有需要，将 `gk/beta` cast 到 `fp32`。
 6. 根据 `useSplitForward` 选择 dispatch：
    - `useSplitForward=true` 表示走 split forward 路径，当前触发条件为 `q` dtype 不是 `fp32`、`chunk_size == 64` 且 `K * V >= 8192`。该路径把一次 KDA 正向拆成多个 L0 调用，以便复用 cube/向量主路径、GDN 状态传播和独立后处理。
+     典型主流模型场景 `bf16, K=128, V=128, chunk_size=64` 满足该条件，因为 `bf16 != fp32` 且 `128 * 128 = 16384 >= 8192`。
    - `useSplitForward=false` 表示走 monolithic `ChunkKdaFwd(stage=0)` 路径，用于小 shape 或 `fp32` 场景。
 7. 对 BNSD/NTD，split 路径的临时输出 copy 回相同 layout 的用户输出。对 BSND/TND，将 BNSD 中间结果转回公开输出 layout。
 
