@@ -109,6 +109,42 @@ stage 2: 计算 output cube 主路径和最终 o 行
 stage 3: 启用 post-WU cube 时后处理 w/kg/u
 ```
 
+目标 split forward 路径中，L2 对 L0 接口的拼接关系如下。小 shape 或 `fp32` fallback 路径不拆 stage，直接调用 `ChunkKdaFwd(stage=0)` 一次性产出同一组输出。
+
+```mermaid
+flowchart LR
+    In["输入: q/k/v/gk/beta<br/>initial_state/cu_seqlens/chunk_indices"] --> Prep["L2: contiguous + layout 推导"]
+    Prep -->|BSND/TND| SwapIn["L0: KdaLayoutSwap12<br/>转 BNSD 内部布局"]
+    Prep -->|BNSD/NTD| ViewIn["L2: Reshape/View<br/>直通 BNSD 内部布局"]
+    SwapIn --> CastGate["L0: Cast<br/>gk/beta -> fp32"]
+    ViewIn --> CastGate
+
+    CastGate --> S1["L0: ChunkKdaFwd(stage=1)<br/>产出 Aqk/Akk/w/u/qg/kg"]
+    S1 --> AqkScale["L0: Muls<br/>Aqk * scale"]
+    S1 --> S3["L0: ChunkKdaFwd(stage=3)<br/>post-WU 后处理"]
+    S3 --> CastW["L0: Cast<br/>w -> fwd_h dtype"]
+    S1 --> FwdH["L0: ChunkGatedDeltaRuleFwdH<br/>消费 kg/w/u/gk"]
+    CastW --> FwdH
+    FwdH --> S2["L0: ChunkKdaFwd(stage=2)<br/>消费 qg/Aqk/v_new/h"]
+    S1 --> S2
+
+    S2 --> OScale["L0: Muls<br/>o * scale"]
+    OScale --> WriteO["L0: ViewCopy 或 KdaLayoutSwap12<br/>按公开 layout 回写"]
+    WriteO --> OutO["输出: o"]
+    AqkScale --> WriteAqk["L0: ViewCopy 或 KdaLayoutSwap12"]
+    WriteAqk --> OutAqk["输出: Aqk"]
+    S1 --> WriteAkk["L0: ViewCopy 或 KdaLayoutSwap12"]
+    WriteAkk --> OutAkk["输出: Akk"]
+    S3 --> WriteWu["L0: ViewCopy 或 KdaLayoutSwap12"]
+    WriteWu --> OutWu["输出: w/u/qg/kg"]
+    FwdH --> WriteState["L0: ViewCopy 或 KdaLayoutSwap12"]
+    WriteState --> OutState["输出: h/v_new"]
+    FwdH --> OutFinal["输出: final_state"]
+
+    Prep -->|fallback| S0["L0: ChunkKdaFwd(stage=0)<br/>monolithic path"]
+    S0 --> OutAll["输出: o/final_state/Aqk/Akk/w/u/qg/kg/v_new/h"]
+```
+
 `ChunkGatedDeltaRuleFwdH` 扩展为可接收可选 `gk`。这是 KDA 复用状态传播的最小依赖；除该正向状态传播复用点外，不扩大修改 GDN 算子族。
 
 BNSD/NTD split forward 中，未做最终后处理（raw）的 `o/Aqk/Akk/w/u/qg/kg/v_new/h` 存放在 executor 管理的临时张量里。L2 最后一步使用同 layout 的 `ViewCopy` 写入用户输出。这样可以避免把用户输出张量作为 custom L0 和逐元素 L0 算子（elementwise L0, elewise L0）之间的生产者-消费者中间张量，否则可能触发非法 tiling 或 workspace 推导。
