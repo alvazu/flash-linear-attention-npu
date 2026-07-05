@@ -36,6 +36,7 @@ DEFAULT_VENDOR_NAME = "fla_npu"
 MIN_PYTHON = (3, 9)
 MIN_TORCH = "2.7.0"
 MIN_TRITON_ASCEND = "3.2.0"
+MIN_TRITON_ASCEND_A5 = "3.2.1"
 TORCH_NPU_GDN_FIX_MINIMUMS = {
     "2.7.1": "2.7.1.post5",
     "2.8.0": "2.8.0.post5",
@@ -121,6 +122,29 @@ def _version_key(value):
     return tuple(nums)
 
 
+def _detect_cann_public_version():
+    for env_name in ("ASCEND_HOME_PATH", "ASCEND_OPP_PATH"):
+        value = os.getenv(env_name)
+        if not value:
+            continue
+        match = re.search(r"(?:^|[/\\_-])cann[-_ ]?(\d+\.\d+\.\d+(?:[-._A-Za-z0-9]*)?)", value, re.I)
+        if match:
+            return match.group(1)
+    return ""
+
+
+def _check_triton_ascend_a5_compat(failures, actual):
+    soc = os.getenv("FLA_NPU_SOC", DEFAULT_SOC)
+    if soc != "ascend950":
+        return
+    actual_version = _version_obj(actual)
+    if actual_version is None or actual_version < Version(MIN_TRITON_ASCEND_A5):
+        failures.append(
+            f"triton-ascend>={MIN_TRITON_ASCEND_A5} is required for FLA_NPU_SOC={soc}; got {actual}. "
+            "triton-ascend 3.2.0 can crash on the A5 Triton runtime."
+        )
+
+
 def _check_torch_npu_gdn_fix(failures, actual):
     actual_version = _version_obj(actual)
     if actual_version is None:
@@ -187,6 +211,7 @@ def _detect_cann_version():
 
 def _check_build_environment():
     failures = []
+    cann_public_version = _detect_cann_public_version()
 
     if shutil.which("bash") is None:
         failures.append("bash is required")
@@ -202,6 +227,8 @@ def _check_build_environment():
         print(f"[fla-npu build][OK] ASCEND_HOME_PATH={os.getenv('ASCEND_HOME_PATH') or '<unset>'}")
         print(f"[fla-npu build][OK] ASCEND_OPP_PATH={os.getenv('ASCEND_OPP_PATH') or '<unset>'}")
         print(f"[fla-npu build][OK] CANN version: {_detect_cann_version()}")
+        if cann_public_version:
+            print(f"[fla-npu build][OK] CANN public version: {cann_public_version}")
 
     if sys.version_info < MIN_PYTHON:
         failures.append(
@@ -239,6 +266,7 @@ def _check_build_environment():
     if triton_ascend_version:
         print(f"[fla-npu build][OK] triton-ascend: {triton_ascend_version}")
         _check_min_version(failures, "triton-ascend", triton_ascend_version, MIN_TRITON_ASCEND)
+        _check_triton_ascend_a5_compat(failures, triton_ascend_version)
     else:
         failures.append("triton-ascend distribution was not found")
 
