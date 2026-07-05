@@ -36,7 +36,7 @@ DEFAULT_VENDOR_NAME = "fla_npu"
 MIN_PYTHON = (3, 9)
 MIN_TORCH = "2.7.0"
 MIN_TRITON_ASCEND = "3.2.0"
-MIN_TRITON_ASCEND_CANN9 = "3.2.1"
+MIN_TRITON_ASCEND_A5 = "3.2.1"
 TORCH_NPU_GDN_FIX_MINIMUMS = {
     "2.7.1": "2.7.1.post5",
     "2.8.0": "2.8.0.post5",
@@ -133,18 +133,18 @@ def _detect_cann_public_version():
     return ""
 
 
-def _check_triton_ascend_cann_compat(failures, actual, cann_public_version):
-    soc = os.getenv("FLA_NPU_SOC", "")
-    cann_key = _version_key(cann_public_version)
-    requires_cann9_runtime = (cann_key is not None and cann_key >= (9, 0, 0)) or soc == "ascend950"
-    if not requires_cann9_runtime:
+def _check_triton_ascend_a5_compat(failures, actual, cann_public_version):
+    soc = os.getenv("FLA_NPU_SOC", DEFAULT_SOC)
+    if soc != "ascend950":
         return
     actual_version = _version_obj(actual)
-    if actual_version is None or actual_version < Version(MIN_TRITON_ASCEND_CANN9):
-        detail = f"CANN {cann_public_version}" if cann_public_version else f"FLA_NPU_SOC={soc}"
+    if actual_version is None or actual_version < Version(MIN_TRITON_ASCEND_A5):
+        detail = f"FLA_NPU_SOC={soc}"
+        if cann_public_version:
+            detail += f" with CANN {cann_public_version}"
         failures.append(
-            f"triton-ascend>={MIN_TRITON_ASCEND_CANN9} is required for {detail}; got {actual}. "
-            "triton-ascend 3.2.0 targets CANN 8.5.x and can crash on the CANN 9.x Triton runtime."
+            f"triton-ascend>={MIN_TRITON_ASCEND_A5} is required for {detail}; got {actual}. "
+            "triton-ascend 3.2.0 can crash on the A5 Triton runtime."
         )
 
 
@@ -269,7 +269,7 @@ def _check_build_environment():
     if triton_ascend_version:
         print(f"[fla-npu build][OK] triton-ascend: {triton_ascend_version}")
         _check_min_version(failures, "triton-ascend", triton_ascend_version, MIN_TRITON_ASCEND)
-        _check_triton_ascend_cann_compat(failures, triton_ascend_version, cann_public_version)
+        _check_triton_ascend_a5_compat(failures, triton_ascend_version, cann_public_version)
     else:
         failures.append("triton-ascend distribution was not found")
 
