@@ -19,6 +19,7 @@
 #include <torch/library.h>
 #include <torch/csrc/autograd/custom_function.h>
 #include <torch/extension.h>
+#include "torch_npu/csrc/core/npu/NPUStream.h"
 #include "op_plugin/include/npu_cpp_extension.h"
 
 namespace op_api {
@@ -390,7 +391,7 @@ at::Tensor npu_chunk_fwd_o(
     return std::tie(w,u);
 }
 ::std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor,
-             at::Tensor, at::Tensor, at::Tensor, at::Tensor>
+             at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor>
 npu_chunk_kda_fwd(
     const at::Tensor &q,
     const at::Tensor &k,
@@ -539,11 +540,15 @@ npu_chunk_kda_fwd(
     );
 
     at::Tensor final_state = output_final_state_ ? final_state_work : at::empty({0}, q.options().dtype(at::kFloat));
-    if (return_intermediate_) {
-        return std::make_tuple(o, final_state, aqk, akk, w, u, qg, kg, v_new, h);
-    }
     at::Tensor empty = at::empty({0}, q.options());
-    return std::make_tuple(o, final_state, aqk, akk, empty, empty, empty, empty, empty, h);
+    at::Tensor g = gk.scalar_type() == at::kFloat ? gk : gk.to(at::kFloat);
+    at::Tensor initial_state_out =
+        (initial_state.has_value() && initial_state->defined()) ? initial_state_ : empty;
+    c10_npu::npuSynchronizeDevice();
+    if (return_intermediate_) {
+        return std::make_tuple(o, final_state, g, aqk, akk, w, u, qg, kg, v_new, h, initial_state_out);
+    }
+    return std::make_tuple(o, final_state, g, aqk, akk, w, u, qg, kg, v_new, h, initial_state_out);
 }
 
 at::Tensor npu_kda_gate_cumsum(

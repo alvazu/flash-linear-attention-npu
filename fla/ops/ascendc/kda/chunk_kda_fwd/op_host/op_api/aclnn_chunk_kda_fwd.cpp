@@ -399,6 +399,8 @@ aclnnStatus aclnnChunkKdaFwdGetWorkspaceSize(
         }
         const aclTensor *aqkScaledBnst = l0op::Muls(aqkComputeBnst, static_cast<float>(params.scale), executorPtr);
         CHECK_RET(aqkScaledBnst != nullptr, ACLNN_ERR_INNER_NULLPTR);
+        const aclTensor *qgScaledBnsd = l0op::Muls(qgComputeBnsd, static_cast<float>(params.scale), executorPtr);
+        CHECK_RET(qgScaledBnsd != nullptr, ACLNN_ERR_INNER_NULLPTR);
 
         auto wScratchBntd = executorPtr->AllocTensor(
             KdaFwdMakeShape({batch, hvNum, params.totalChunks, params.chunkSize, kDim}),
@@ -434,15 +436,13 @@ aclnnStatus aclnnChunkKdaFwdGetWorkspaceSize(
         auto outResult = l0op::ChunkKdaFwd(qBnsd, kBnsd, vBnsd, gkBnsd, betaBns, params.initialStateOptional,
                                            params.cuSeqlensOptional, params.chunkIndicesOptional, params.scale,
                                            params.chunkSize, params.outputFinalState, params.totalChunks, 2,
-                                           oComputeBnsd, params.finalStateOut, aqkComputeBnst, akkComputeBnst,
-                                           wComputeBnsd, oLocalBnsd, qgComputeBnsd, kgComputeBnsd,
+                                           oComputeBnsd, params.finalStateOut, aqkScaledBnst, akkComputeBnst,
+                                           wComputeBnsd, oLocalBnsd, qgScaledBnsd, kgComputeBnsd,
                                            vNewComputeBnsd, hComputeBnst, executorPtr);
         for (auto tensor : outResult) {
             CHECK_RET(tensor != nullptr, ACLNN_ERR_PARAM_NULLPTR);
         }
-        const aclTensor *oScaledBnsd = l0op::Muls(oComputeBnsd, static_cast<float>(params.scale), executorPtr);
-        CHECK_RET(oScaledBnsd != nullptr, ACLNN_ERR_INNER_NULLPTR);
-        result = {oScaledBnsd, params.finalStateOut, aqkScaledBnst, akkComputeBnst, wComputeBnsd, uComputeBnsd,
+        result = {oComputeBnsd, params.finalStateOut, aqkScaledBnst, akkComputeBnst, wComputeBnsd, uComputeBnsd,
                   qgComputeBnsd, kgComputeBnsd, vNewComputeBnsd, hComputeBnst};
     } else {
         result = l0op::ChunkKdaFwd(qBnsd, kBnsd, vBnsd, gkBnsd, betaBns, params.initialStateOptional,

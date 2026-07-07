@@ -269,6 +269,27 @@ Correct direction:
 - At the end, `ViewCopy` the temporary tensors to user outputs in the same BNSD/NTD layout. This is not a layout swap.
 - Keep `KdaLayoutSwap12` only for BSND/TND compatibility paths.
 
+### Mistake 14: Letting internal intermediate order leak into the public KDA tuple
+
+The public PyTorch tuple must follow the fla-org forward contract:
+
+```python
+o, final_state, g, Aqk, Akk, w, u, qg, kg, v_new, h, initial_state
+```
+
+Bad pattern:
+
+- Returning only the internal custom L0 outputs `o/final_state/Aqk/Akk/w/u/qg/kg/v_new/h`.
+- Forgetting the public `g` slot because the NPU L0 path uses `gk` as the actual gate tensor.
+- Dropping the `initial_state` slot because the current implementation only needs it as an input or supports the `None` case.
+
+Correct direction:
+
+- Keep the L0 kernel output compact, but let the PyTorch wrapper expose the full public tuple.
+- Return `g` as the cumulative gate tensor in `fp32`, matching the public fla-org contract.
+- Reserve `initial_state` in the tuple: empty tensor when absent, pass-through when provided.
+- Update tests by semantic names, not by old positional indexes.
+
 ## 3. KDA Forward Debug Checklist
 
 Before running long shapes:

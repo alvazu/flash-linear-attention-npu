@@ -106,13 +106,15 @@ def test_chunk_kda_fwd_matches_reference():
 
     _assert_close("o", got[0], ref.o)
     _assert_close("final_state", got[1], ref.final_state)
-    _assert_close("Aqk", got[2], ref.Aqk)
-    _assert_close("Akk", got[3], ref.Akk)
-    _assert_close("w", got[4], ref.w)
-    _assert_close("u", got[5], ref.u)
-    _assert_close("qg", got[6], ref.qg)
-    _assert_close("kg", got[7], ref.kg)
-    _assert_close("v_new", got[8], ref.v_new)
+    _assert_close("g", got[2], gk)
+    _assert_close("Aqk", got[3], ref.Aqk)
+    _assert_close("Akk", got[4], ref.Akk)
+    _assert_close("w", got[5], ref.w)
+    _assert_close("u", got[6], ref.u)
+    _assert_close("qg", got[7], ref.qg)
+    _assert_close("kg", got[8], ref.kg)
+    _assert_close("v_new", got[9], ref.v_new)
+    _assert_close("initial_state", got[11], initial_state)
 
 
 def test_chunk_kda_fwd_chunk128_v128_gva_varlen():
@@ -146,6 +148,8 @@ def test_chunk_kda_fwd_chunk128_v128_gva_varlen():
     )
     _assert_close("o chunk128 v128 gva varlen", got[0], ref.o, rtol=3e-3, atol=3e-3)
     _assert_close("final_state chunk128 v128 gva varlen", got[1], ref.final_state, rtol=3e-3, atol=3e-3)
+    _assert_close("g chunk128 v128 gva varlen", got[2], gk)
+    assert got[11].numel() == 0
 
 
 def test_chunk_kda_fwd_bf16_chunk32_matches_reference():
@@ -182,6 +186,8 @@ def test_chunk_kda_fwd_bf16_chunk32_matches_reference():
     )
     _assert_close("o bf16 chunk32", got[0], ref.o, rtol=2e-2, atol=2e-2)
     _assert_close("final_state bf16 chunk32", got[1], ref.final_state, rtol=2e-2, atol=2e-2)
+    _assert_close("g bf16 chunk32", got[2], gk)
+    _assert_close("initial_state bf16 chunk32", got[11], initial_state)
 
 
 def test_chunk_kda_fwd_bf16_gate_matches_reference():
@@ -220,6 +226,8 @@ def test_chunk_kda_fwd_bf16_gate_matches_reference():
     )
     _assert_close("o bf16 gate", got[0], ref.o, rtol=2e-2, atol=2e-2)
     _assert_close("final_state bf16 gate", got[1], ref.final_state, rtol=2e-2, atol=2e-2)
+    _assert_close("g bf16 gate", got[2], gk)
+    _assert_close("initial_state bf16 gate", got[11], initial_state)
 
 
 def test_chunk_kda_fwd_fp16_matches_reference():
@@ -256,13 +264,15 @@ def test_chunk_kda_fwd_fp16_matches_reference():
     )
     _assert_close("o fp16", got[0], ref.o, rtol=2e-2, atol=2e-2)
     _assert_close("final_state fp16", got[1], ref.final_state, rtol=2e-2, atol=2e-2)
-    _assert_close("Aqk fp16", got[2], ref.Aqk, rtol=2e-2, atol=2e-2)
-    _assert_close("Akk fp16", got[3], ref.Akk, rtol=2e-2, atol=2e-2)
-    _assert_close("w fp16", got[4], ref.w, rtol=2e-2, atol=2e-2)
-    _assert_close("u fp16", got[5], ref.u, rtol=2e-2, atol=2e-2)
-    _assert_close("qg fp16", got[6], ref.qg, rtol=2e-2, atol=2e-2)
-    _assert_close("kg fp16", got[7], ref.kg, rtol=2e-2, atol=2e-2)
-    _assert_close("v_new fp16", got[8], ref.v_new, rtol=2e-2, atol=2e-2)
+    _assert_close("g fp16", got[2], gk)
+    _assert_close("Aqk fp16", got[3], ref.Aqk, rtol=2e-2, atol=2e-2)
+    _assert_close("Akk fp16", got[4], ref.Akk, rtol=2e-2, atol=2e-2)
+    _assert_close("w fp16", got[5], ref.w, rtol=2e-2, atol=2e-2)
+    _assert_close("u fp16", got[6], ref.u, rtol=2e-2, atol=2e-2)
+    _assert_close("qg fp16", got[7], ref.qg, rtol=2e-2, atol=2e-2)
+    _assert_close("kg fp16", got[8], ref.kg, rtol=2e-2, atol=2e-2)
+    _assert_close("v_new fp16", got[9], ref.v_new, rtol=2e-2, atol=2e-2)
+    _assert_close("initial_state fp16", got[11], initial_state)
 
 
 def test_chunk_kda_fwd_tnd_matches_reference():
@@ -296,14 +306,16 @@ def test_chunk_kda_fwd_tnd_matches_reference():
 
     _assert_close("o tnd", got[0], ref.o.squeeze(0))
     _assert_close("final_state tnd", got[1], ref.final_state)
-    _assert_close("Aqk tnd", got[2], ref.Aqk.squeeze(0))
-    _assert_close("Akk tnd", got[3], ref.Akk.squeeze(0))
-    _assert_close("w tnd", got[4], ref.w.squeeze(0))
-    _assert_close("u tnd", got[5], ref.u.squeeze(0))
-    _assert_close("qg tnd", got[6], ref.qg.squeeze(0))
-    _assert_close("kg tnd", got[7], ref.kg.squeeze(0))
-    _assert_close("v_new tnd", got[8], ref.v_new.squeeze(0))
-    _assert_close("h tnd", got[9], ref.h.squeeze(0))
+    _assert_close("g tnd", got[2], gk.squeeze(0))
+    _assert_close("Aqk tnd", got[3], ref.Aqk.squeeze(0))
+    _assert_close("Akk tnd", got[4], ref.Akk.squeeze(0))
+    _assert_close("w tnd", got[5], ref.w.squeeze(0))
+    _assert_close("u tnd", got[6], ref.u.squeeze(0))
+    _assert_close("qg tnd", got[7], ref.qg.squeeze(0))
+    _assert_close("kg tnd", got[8], ref.kg.squeeze(0))
+    _assert_close("v_new tnd", got[9], ref.v_new.squeeze(0))
+    _assert_close("h tnd", got[10], ref.h.squeeze(0))
+    _assert_close("initial_state tnd", got[11], initial_state)
 
 
 def test_chunk_kda_fwd_bnsd_direct_matches_reference():
@@ -345,14 +357,16 @@ def test_chunk_kda_fwd_bnsd_direct_matches_reference():
 
     _assert_close("o bnsd", got[0], ref.o.permute(0, 2, 1, 3), rtol=2e-2, atol=2e-2)
     _assert_close("final_state bnsd", got[1], ref.final_state, rtol=2e-2, atol=2e-2)
-    _assert_close("Aqk bnsd", got[2], ref.Aqk.permute(0, 2, 1, 3), rtol=2e-2, atol=2e-2)
-    _assert_close("Akk bnsd", got[3], ref.Akk.permute(0, 2, 1, 3), rtol=2e-2, atol=2e-2)
-    _assert_close("w bnsd", got[4], ref.w.permute(0, 2, 1, 3), rtol=2e-2, atol=2e-2)
-    _assert_close("u bnsd", got[5], ref.u.permute(0, 2, 1, 3), rtol=2e-2, atol=2e-2)
-    _assert_close("qg bnsd", got[6], ref.qg.permute(0, 2, 1, 3), rtol=2e-2, atol=2e-2)
-    _assert_close("kg bnsd", got[7], ref.kg.permute(0, 2, 1, 3), rtol=2e-2, atol=2e-2)
-    _assert_close("v_new bnsd", got[8], ref.v_new.permute(0, 2, 1, 3), rtol=2e-2, atol=2e-2)
-    _assert_close("h bnsd", got[9], ref.h.permute(0, 2, 1, 3, 4), rtol=2e-2, atol=2e-2)
+    _assert_close("g bnsd", got[2], gk_bnsd, rtol=2e-2, atol=2e-2)
+    _assert_close("Aqk bnsd", got[3], ref.Aqk.permute(0, 2, 1, 3), rtol=2e-2, atol=2e-2)
+    _assert_close("Akk bnsd", got[4], ref.Akk.permute(0, 2, 1, 3), rtol=2e-2, atol=2e-2)
+    _assert_close("w bnsd", got[5], ref.w.permute(0, 2, 1, 3), rtol=2e-2, atol=2e-2)
+    _assert_close("u bnsd", got[6], ref.u.permute(0, 2, 1, 3), rtol=2e-2, atol=2e-2)
+    _assert_close("qg bnsd", got[7], ref.qg.permute(0, 2, 1, 3), rtol=2e-2, atol=2e-2)
+    _assert_close("kg bnsd", got[8], ref.kg.permute(0, 2, 1, 3), rtol=2e-2, atol=2e-2)
+    _assert_close("v_new bnsd", got[9], ref.v_new.permute(0, 2, 1, 3), rtol=2e-2, atol=2e-2)
+    _assert_close("h bnsd", got[10], ref.h.permute(0, 2, 1, 3, 4), rtol=2e-2, atol=2e-2)
+    _assert_close("initial_state bnsd", got[11], initial_state)
 
 
 def test_chunk_kda_fwd_ntd_direct_matches_reference():
@@ -394,14 +408,16 @@ def test_chunk_kda_fwd_ntd_direct_matches_reference():
 
     _assert_close("o ntd", got[0], ref.o.squeeze(0).permute(1, 0, 2), rtol=2e-2, atol=2e-2)
     _assert_close("final_state ntd", got[1], ref.final_state, rtol=2e-2, atol=2e-2)
-    _assert_close("Aqk ntd", got[2], ref.Aqk.squeeze(0).permute(1, 0, 2), rtol=2e-2, atol=2e-2)
-    _assert_close("Akk ntd", got[3], ref.Akk.squeeze(0).permute(1, 0, 2), rtol=2e-2, atol=2e-2)
-    _assert_close("w ntd", got[4], ref.w.squeeze(0).permute(1, 0, 2), rtol=2e-2, atol=2e-2)
-    _assert_close("u ntd", got[5], ref.u.squeeze(0).permute(1, 0, 2), rtol=2e-2, atol=2e-2)
-    _assert_close("qg ntd", got[6], ref.qg.squeeze(0).permute(1, 0, 2), rtol=2e-2, atol=2e-2)
-    _assert_close("kg ntd", got[7], ref.kg.squeeze(0).permute(1, 0, 2), rtol=2e-2, atol=2e-2)
-    _assert_close("v_new ntd", got[8], ref.v_new.squeeze(0).permute(1, 0, 2), rtol=2e-2, atol=2e-2)
-    _assert_close("h ntd", got[9], ref.h.squeeze(0).permute(1, 0, 2, 3), rtol=2e-2, atol=2e-2)
+    _assert_close("g ntd", got[2], gk_ntd, rtol=2e-2, atol=2e-2)
+    _assert_close("Aqk ntd", got[3], ref.Aqk.squeeze(0).permute(1, 0, 2), rtol=2e-2, atol=2e-2)
+    _assert_close("Akk ntd", got[4], ref.Akk.squeeze(0).permute(1, 0, 2), rtol=2e-2, atol=2e-2)
+    _assert_close("w ntd", got[5], ref.w.squeeze(0).permute(1, 0, 2), rtol=2e-2, atol=2e-2)
+    _assert_close("u ntd", got[6], ref.u.squeeze(0).permute(1, 0, 2), rtol=2e-2, atol=2e-2)
+    _assert_close("qg ntd", got[7], ref.qg.squeeze(0).permute(1, 0, 2), rtol=2e-2, atol=2e-2)
+    _assert_close("kg ntd", got[8], ref.kg.squeeze(0).permute(1, 0, 2), rtol=2e-2, atol=2e-2)
+    _assert_close("v_new ntd", got[9], ref.v_new.squeeze(0).permute(1, 0, 2), rtol=2e-2, atol=2e-2)
+    _assert_close("h ntd", got[10], ref.h.squeeze(0).permute(1, 0, 2, 3), rtol=2e-2, atol=2e-2)
+    _assert_close("initial_state ntd", got[11], initial_state)
 
 
 def test_kda_gate_cumsum_default_and_fwd_integration():
@@ -442,6 +458,8 @@ def test_kda_gate_cumsum_default_and_fwd_integration():
     )
     _assert_close("gate cumsum fwd o", got[0], ref.o, rtol=2e-2, atol=2e-2)
     _assert_close("gate cumsum fwd state", got[1], ref.final_state, rtol=2e-2, atol=2e-2)
+    _assert_close("gate cumsum fwd g", got[2], gk, rtol=2e-2, atol=2e-2)
+    _assert_close("gate cumsum fwd initial_state", got[11], initial_state)
 
 
 def test_kda_gate_cumsum_bnsd_direct_matches_reference():

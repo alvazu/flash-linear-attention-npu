@@ -78,8 +78,18 @@ BNSD 和 NTD 是性能布局，适用于上游 causal conv 已经完成数据排
 支持的数据类型（dtype）语义：
 
 - `q/k/v/o/Aqk/Akk/w/u/qg/kg/v_new/h`：根据张量角色跟随 `q` 或 `v` 的 dtype，算子注册覆盖 `fp16`、`bf16` 和 32 位浮点（fp32）；其中 `kg` 表示 key-gated k 中间张量，不是 `gk` 输入。
+- `g`：对齐三方对标实现的 gate 累积输出槽，当前由输入 `gk` 转为 `fp32` 后返回。
 - `gk/beta`：PyTorch 层接受 `fp32` 或 `bf16`，进入 `ChunkKdaFwd` 前统一 cast 到 `fp32`。
 - `initial_state/final_state`：固定为 `fp32`。
+
+返回值顺序对齐三方对标实现：
+
+```python
+o, final_state, g, Aqk, Akk, w, u, qg, kg, v_new, h, initial_state = \
+    torch.ops.npu.npu_chunk_kda_fwd(...)
+```
+
+其中 `initial_state` 输出为预留槽。未传入时返回空 tensor；传入时透传输入 `initial_state`，便于后续扩展到更完整的 state 语义。
 
 预留或拦截：
 
@@ -147,9 +157,11 @@ flowchart LR
     FwdH --> WriteState["L0: ViewCopy 或 KdaLayoutSwap12"]
     WriteState --> OutState["输出: h/v_new"]
     FwdH --> OutFinal["输出: final_state"]
+    CastGate --> OutG["输出: g"]
+    In --> OutInitial["输出: initial_state 预留槽"]
 
     CastGate -->|useSplitForward=false| S0["L0: ChunkKdaFwd(stage=0)<br/>monolithic path"]
-    S0 --> OutAll["输出: o/final_state/Aqk/Akk/w/u/qg/kg/v_new/h"]
+    S0 --> OutAll["输出: o/final_state/g/Aqk/Akk/w/u/qg/kg/v_new/h/initial_state"]
 ```
 
 `ChunkGatedDeltaRuleFwdH` 扩展为可接收可选 `gk`。这是 KDA 复用状态传播的最小依赖；除该正向状态传播复用点外，不扩大修改 GDN 算子族。
@@ -171,6 +183,9 @@ BNSD/NTD split forward 中，未做最终后处理（raw）的 `o/Aqk/Akk/w/u/qg
   - scalar fallback 仅作为非目标 shape 的 correctness fallback，不能作为目标性能路径。
 - `Akk` 求逆：
   - 完整 block token 长度（BT）为 64 时，使用 cube 辅助的 blocked matrix-chain iteration。
+  - 当前 PR 保留非 MXH 的 MCH + cube 求逆路径，优先保证输出语义和精度闭环。
+  - MXH/L0C 驻留融合曾作为性能探索项实现，但在随机 `cu_seqlens` + 非零 `gk` 场景下仍存在尾块精度风险，本轮已下掉，不作为交付路径。
+  - 非满 64 的尾块避免读取 64x64 脏数据，输入准备和回写必须只覆盖当前序列有效 token。
   - solve scratch 在状态传播消费 `h` 之前暂存在 `h` workspace slot 中。
 - `w/u` 后处理：
   - 完整 `BT=64` 且 `K/V` 对齐时，使用 cube GEMM 计算 `Akk @ w` 和 `Akk @ v_new`。
