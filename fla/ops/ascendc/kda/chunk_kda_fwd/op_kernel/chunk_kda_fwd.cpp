@@ -132,7 +132,7 @@ __aicore__ inline T FloatToType(float value)
     return static_cast<T>(value);
 }
 
-template <typename T>
+template <typename T, typename OUT_T = T>
 class ChunkKdaFwdKernel {
 public:
     __aicore__ inline void Init(GM_ADDR q, GM_ADDR k, GM_ADDR v, GM_ADDR gk, GM_ADDR beta, GM_ADDR initialState,
@@ -157,12 +157,12 @@ public:
             chunkIndices_.SetGlobalBuffer((__gm__ int64_t *)chunkIndices);
         }
         hasChunkIndices_ = chunkIndices != nullptr;
-        o_.SetGlobalBuffer((__gm__ T *)o);
+        o_.SetGlobalBuffer((__gm__ OUT_T *)o);
         finalState_.SetGlobalBuffer((__gm__ float *)finalState);
         aqk_.SetGlobalBuffer((__gm__ T *)aqk);
         akk_.SetGlobalBuffer((__gm__ T *)akk);
         w_.SetGlobalBuffer((__gm__ T *)w);
-        u_.SetGlobalBuffer((__gm__ T *)u);
+        u_.SetGlobalBuffer((__gm__ OUT_T *)u);
         qg_.SetGlobalBuffer((__gm__ T *)qg);
         kg_.SetGlobalBuffer((__gm__ T *)kg);
         vNew_.SetGlobalBuffer((__gm__ T *)vNew);
@@ -2105,7 +2105,7 @@ private:
     {
         using ElementA = T;
         using ElementB = T;
-        using ElementC = T;
+        using ElementC = OUT_T;
         using LayoutTagA = Catlass::layout::RowMajor;
         using LayoutTagB = Catlass::layout::RowMajor;
         using LayoutTagC = Catlass::layout::RowMajor;
@@ -2582,12 +2582,12 @@ private:
     GlobalTensor<float> initialState_;
     GlobalTensor<int64_t> cuSeqlens_;
     GlobalTensor<int64_t> chunkIndices_;
-    GlobalTensor<T> o_;
+    GlobalTensor<OUT_T> o_;
     GlobalTensor<float> finalState_;
     GlobalTensor<T> aqk_;
     GlobalTensor<T> akk_;
     GlobalTensor<T> w_;
-    GlobalTensor<T> u_;
+    GlobalTensor<OUT_T> u_;
     GlobalTensor<T> qg_;
     GlobalTensor<T> kg_;
     GlobalTensor<T> vNew_;
@@ -2648,29 +2648,57 @@ extern "C" __global__ __aicore__ void chunk_kda_fwd(GM_ADDR q, GM_ADDR k, GM_ADD
         KERNEL_TASK_TYPE(1, KERNEL_TYPE_MIX_AIC_1_2);
         if (tilingData.dataType == 1) {
             if ASCEND_IS_AIC {
-                ChunkKdaFwdKernel<bfloat16_t> op;
-                op.Init(q, k, v, gk, beta, initial_state, cu_seqlens, chunk_indices, o, final_state, aqk, akk, w, u,
-                        qg, kg, v_new, h, tilingData, &pipe, false);
-                op.ProcessAic();
+                if (tilingData.stage == 2) {
+                    ChunkKdaFwdKernel<bfloat16_t, float> op;
+                    op.Init(q, k, v, gk, beta, initial_state, cu_seqlens, chunk_indices, o, final_state, aqk, akk, w,
+                            u, qg, kg, v_new, h, tilingData, &pipe, false);
+                    op.ProcessAic();
+                } else {
+                    ChunkKdaFwdKernel<bfloat16_t> op;
+                    op.Init(q, k, v, gk, beta, initial_state, cu_seqlens, chunk_indices, o, final_state, aqk, akk, w,
+                            u, qg, kg, v_new, h, tilingData, &pipe, false);
+                    op.ProcessAic();
+                }
             }
             if ASCEND_IS_AIV {
-                ChunkKdaFwdKernel<bfloat16_t> op;
-                op.Init(q, k, v, gk, beta, initial_state, cu_seqlens, chunk_indices, o, final_state, aqk, akk, w, u,
-                        qg, kg, v_new, h, tilingData, &pipe);
-                op.ProcessAiv();
+                if (tilingData.stage == 2) {
+                    ChunkKdaFwdKernel<bfloat16_t, float> op;
+                    op.Init(q, k, v, gk, beta, initial_state, cu_seqlens, chunk_indices, o, final_state, aqk, akk, w,
+                            u, qg, kg, v_new, h, tilingData, &pipe);
+                    op.ProcessAiv();
+                } else {
+                    ChunkKdaFwdKernel<bfloat16_t> op;
+                    op.Init(q, k, v, gk, beta, initial_state, cu_seqlens, chunk_indices, o, final_state, aqk, akk, w,
+                            u, qg, kg, v_new, h, tilingData, &pipe);
+                    op.ProcessAiv();
+                }
             }
         } else {
             if ASCEND_IS_AIC {
-                ChunkKdaFwdKernel<half> op;
-                op.Init(q, k, v, gk, beta, initial_state, cu_seqlens, chunk_indices, o, final_state, aqk, akk, w, u,
-                        qg, kg, v_new, h, tilingData, &pipe, false);
-                op.ProcessAic();
+                if (tilingData.stage == 2) {
+                    ChunkKdaFwdKernel<half, float> op;
+                    op.Init(q, k, v, gk, beta, initial_state, cu_seqlens, chunk_indices, o, final_state, aqk, akk, w,
+                            u, qg, kg, v_new, h, tilingData, &pipe, false);
+                    op.ProcessAic();
+                } else {
+                    ChunkKdaFwdKernel<half> op;
+                    op.Init(q, k, v, gk, beta, initial_state, cu_seqlens, chunk_indices, o, final_state, aqk, akk, w,
+                            u, qg, kg, v_new, h, tilingData, &pipe, false);
+                    op.ProcessAic();
+                }
             }
             if ASCEND_IS_AIV {
-                ChunkKdaFwdKernel<half> op;
-                op.Init(q, k, v, gk, beta, initial_state, cu_seqlens, chunk_indices, o, final_state, aqk, akk, w, u,
-                        qg, kg, v_new, h, tilingData, &pipe);
-                op.ProcessAiv();
+                if (tilingData.stage == 2) {
+                    ChunkKdaFwdKernel<half, float> op;
+                    op.Init(q, k, v, gk, beta, initial_state, cu_seqlens, chunk_indices, o, final_state, aqk, akk, w,
+                            u, qg, kg, v_new, h, tilingData, &pipe);
+                    op.ProcessAiv();
+                } else {
+                    ChunkKdaFwdKernel<half> op;
+                    op.Init(q, k, v, gk, beta, initial_state, cu_seqlens, chunk_indices, o, final_state, aqk, akk, w,
+                            u, qg, kg, v_new, h, tilingData, &pipe);
+                    op.ProcessAiv();
+                }
             }
         }
     } else if (TILING_KEY_IS(2)) {
