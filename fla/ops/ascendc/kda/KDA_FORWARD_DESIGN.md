@@ -40,6 +40,43 @@ o         = qg @ h_prev * scale + Aqk @ v_new
 - AscendC 向量流水（vector pipe）中使用 `exp(x * ln2)` 实现 `exp2(x)`。
 - `final_state` 遵循三方对标实现和 GDN 语义，固定为 `float32`，即使 `q/k/v/o` 是 16 位浮点（fp16）或 Brain Floating Point 16（bf16）。
 
+### 2.1 Gate Cumsum 语义
+
+`KdaGateCumsum` 负责把模型侧 raw gate 转成 KDA 主算子消费的 `gk`。当 `use_gate_in_kernel=false` 时，输入 `g` 已经是 step gate，kernel 仅做 chunk 内 log2 空间累加：
+
+```text
+gk[b, t, hv, d] = cumsum(g[b, t, hv, d] * rcp_ln2, within_current_chunk)
+```
+
+当 `use_gate_in_kernel=true && safe_gate=true` 时，对齐三方对标实现的 safe gate raw path：
+
+```text
+x       = (g_raw + dt_bias[hv, d]) * exp(A_log[hv])
+gate    = lower_bound * sigmoid(x)
+gk      = cumsum(gate * rcp_ln2, within_current_chunk)
+```
+
+注意事项：
+
+- `gk` 是 chunk 内累积，不跨 chunk 继续累加。`g_i - g_j` 的使用范围在 chunk 内，因此合法 `gk` 在同一 chunk 内应整体单调不增，且 causal 下 `g_i - g_j <= 0`。
+- `safe_gate` 下每步 gate 位于 `[lower_bound, 0]`。默认 `lower_bound=-5` 时，一个 `chunk_size=64` 的 chunk 内 `gk` 可能到 `-300~-460`，这是合法值域。
+- 如果某个 chunk 尾行被错误写成 0，会出现 `g_i - g_j` 正跳几百，随后 `exp2(g_i - g_j)` 溢出或产生极大中间值。这类问题的根因通常在 `KdaGateCumsum` 或同步/写回生命周期，不应先通过收紧输入 range、把 cube 改成 scalar 或调阈值规避。
+
+定位 gate cumsum 问题时，应先使用 gate-only 对比，而不是直接看 `o/final_state`：
+
+```python
+gk_npu = torch.ops.npu.npu_kda_gate_cumsum(
+    g_raw, chunk_size,
+    A_log=a_log,
+    dt_bias=dt_bias,
+    use_gate_in_kernel=True,
+    safe_gate=True,
+    lower_bound=-5.0,
+)
+gk_ref = reference_safe_gate_chunk_cumsum(g_raw, a_log, dt_bias, chunk_size)
+torch.testing.assert_close(gk_npu.cpu(), gk_ref.cpu(), rtol=2e-3, atol=2e-3)
+```
+
 ## 3. 对外接口
 
 PyTorch API：
@@ -126,6 +163,38 @@ stage 3: 启用 post-WU cube 时后处理 w/kg/u
 - 如果把全部逻辑塞进一个大 kernel，需要在 `ChunkKdaFwd` 内重新实现 GDN 状态传播和输出后处理，既会重复已有可靠实现，也会把 cube 主路径、向量后处理、跨 chunk 依赖揉在一起，后续维护和定位都更困难。
 - 对主流 `bf16, K=128, V=128, chunk_size=64` 场景，矩阵计算量足够大，拆分带来的 L0 调用和临时张量开销可以被 cube/向量主路径收益覆盖；而小 shape 或 `fp32` 场景收益不足，所以保留 `stage=0` 单 L0 路径作为简单通用路径。
 
+### 4.1 Stage 间数据依赖
+
+KDA 正向的核心依赖关系如下：
+
+```text
+KdaGateCumsum(raw gate) -> gk
+
+ChunkKdaFwd stage 1:
+    输入 q/k/v/gk/beta
+    产出 Aqk/Akk/qg/kg/w/u
+
+ChunkKdaFwd stage 3:
+    输入 stage 1 scratch
+    产出 post-WU 后的 w/u/kg
+
+ChunkGatedDeltaRuleFwdH:
+    输入 kg/w/u/gk/initial_state
+    产出 h/v_new/final_state
+
+ChunkKdaFwd stage 2:
+    输入 qg/Aqk/h/v_new
+    产出 o
+```
+
+其中无 chunk 间依赖的部分可以按 `B/HV/chunk` 并行，存在 chunk 间依赖的是 `ChunkGatedDeltaRuleFwdH` 内部的状态传播。优化时不能把这两类依赖混在一起：
+
+- `Aqk/Akk/qg/kg/w/u` 准备阶段允许多个 chunk 并行排布。
+- `h/v_new/final_state` 状态传播必须尊重 chunk 顺序，除非引入明确的分段 prefix/scan 方案。
+- `o` 只有在 `h/v_new` 已经可用后才能计算。
+
+因此当前实现把 stage 拆开，是为了复用已有 GDN 状态传播，并让 cube 主路径和向量准备/后处理有清晰边界。后续如果进一步融合 stage，必须重新证明跨 stage 的生产者-消费者关系、workspace 生命周期和 cross-core flag 计数平衡。
+
 目标 split forward 路径中，L2 对 L0 接口的拼接关系如下。小 shape 或 `fp32` fallback 路径在完成 layout/cast 后不拆 stage，直接调用 `ChunkKdaFwd(stage=0)` 一次性产出同一组输出。
 
 ```mermaid
@@ -196,6 +265,79 @@ BNSD/NTD split forward 中，未做最终后处理（raw）的 `o/Aqk/Akk/w/u/qg
 
 对于 half/bfloat16 且 `K>=16` 的目标路径，tiling 使用完整 AICore block 数启动，确保每个 AIC producer 都有成对的 AIV consumer，反之亦然。这是 cross-core flag 计数保持平衡的必要条件。
 
+### 5.1 AIV/MTE 生命周期
+
+向量 kernel 中常见流水为：
+
+```text
+MTE2: GM -> UB
+V:    UB vector compute
+MTE3: UB -> GM
+```
+
+任一 UB buffer 被跨 pipe 复用前，必须表达真实依赖：
+
+```cpp
+// GM -> UB 后，V 读取前
+DataCopy(ub, gm[offset], len);
+SetFlag<HardEvent::MTE2_V>(event0);
+WaitFlag<HardEvent::MTE2_V>(event0);
+
+// V 计算后，MTE3 写回前
+VectorCompute(ub, ...);
+SetFlag<HardEvent::V_MTE3>(event1);
+WaitFlag<HardEvent::V_MTE3>(event1);
+DataCopy(gm[offset], ub, len);
+
+// MTE3 仍在读 ub 时，V 或 MTE2 不能复用同一 ub
+SetFlag<HardEvent::MTE3_V>(event2);
+WaitFlag<HardEvent::MTE3_V>(event2);
+SetFlag<HardEvent::MTE3_MTE2>(event3);
+WaitFlag<HardEvent::MTE3_MTE2>(event3);
+```
+
+`KdaGateCumsum` 曾出现过一个典型同步缺口：每行 `acc` 写回 `gk` 后只等待了 `MTE3->MTE2`，没有等待 `MTE3->V`。当同一个 AIV core 写完一个 chunk 的最后一行后继续处理下一个 task，下一 task 开始时 `Duplicate(acc, 0)` 可能覆盖 MTE3 仍在读取的源 UB，导致上一 task 的最后一行被写成 0。
+
+错误模式伪代码：
+
+```cpp
+for (task : tasks_on_this_core) {
+    Duplicate(acc, 0);
+    for (t in chunk) {
+        Add(acc, acc, row);
+        SetFlag<V_MTE3>(event);
+        WaitFlag<V_MTE3>(event);
+        DataCopy(gk[t], acc, k);
+        SetFlag<MTE3_MTE2>(event);
+        WaitFlag<MTE3_MTE2>(event);
+        // 缺少 MTE3_V。下一 task 会复用 acc。
+    }
+}
+```
+
+修复模式：
+
+```cpp
+DataCopy(gk[t], acc, k);
+SetFlag<HardEvent::MTE3_MTE2>(mte3ToMte2Event);
+WaitFlag<HardEvent::MTE3_MTE2>(mte3ToMte2Event);
+SetFlag<HardEvent::MTE3_V>(mte3ToVEvent);
+WaitFlag<HardEvent::MTE3_V>(mte3ToVEvent);
+```
+
+现象特征：
+
+- gate-only 对比中，只坏固定 core 负责的 task 尾行，例如前若干 chunk 的 `t=chunk_end-1`。
+- 坏值常为 0 或旧 buffer 值；前面行与 CPU reference 基本一致。
+- `safe_gate` 大值域下，下游 `Aqk/Akk/w/kg` 出现 `1e23~1e35` 级极大值或 NaN/Inf。
+- `o/final_state` 是下游症状，真正第一现场是 `gk` 的逐元素 diff。
+
+回归覆盖要求：
+
+- 至少包含一个 `safe_gate=True`、`K=128`、`chunk_size=64`、task 数大于 AIV core 数的 gate-only 用例。
+- 该用例不需要非常长。`T=1536, HV=2, K=128` 已能稳定覆盖“一个 core 连续处理多个 task”的最后一行写回 hazard。
+- 不能只跑 `T=40` 这类小 safe-gate 用例，也不能只跑外部已传入 `gk` 的 `chunk_kda_fwd` 主算子。
+
 ## 6. 内存与 Layout
 
 L2 内部使用 BNSD，因为该 layout 在 kernel 使用的 head 和 token 维度上读写更连续：
@@ -237,6 +379,12 @@ UB 使用原则：
   - `o`：`max_abs=4.63e-4`，`mean_abs=4.01e-5`。
   - `final_state`：`max_abs=1.21e-4`，`mean_abs=9.68e-6`。
 - 目标 sampled NTD `B=1, H_K=1, H_V=2, T=16384, K=128, V=128, chunk_size=64` 通过。
+- `KdaGateCumsum` safe-gate 多 task 回归 `B=1, T=1536, H_V=2, K=128, chunk_size=64` 通过：
+  - gate-only CPU reference 对比 `bad_count=0`。
+  - 最大绝对误差约 `1.5e-4`，处于 `fp32` 累加和向量指数误差可接受范围。
+- 极端 safe-gate 模型复现 `B=1, H_K=2, H_V=2, T=131072, K=128, V=128, chunk_size=64, bf16` 的 NPU 路径通过有限值检查：
+  - `gk/o/final_state` 全量 finite。
+  - 原先由 chunk 尾行错误写 0 引发的 `exp2(g_i - g_j)` 放大链路已消除。
 
 性能验证使用 `msopprof --aic-metrics=BasicInfo`：
 
@@ -247,8 +395,33 @@ UB 使用原则：
 
 - 高 `K/V` 的非 chunk 对齐 `cu_seqlens` 在当前 prototype 中可能触发 kernel timeout。在 dedicated partial-chunk 路径实现并验证前，不宣称已优化 varlen high `K/V` 支持。
 - 当前 PR 有意不验证 `V=256`。
+- `return_intermediate=True` 下的中间量导出仍需单独看护无效区、layout 和 dtype 语义。若 `h` 中间量出现无效区极值，不应直接等价为 `final_state` 错误，需要按公开输出语义和有效区逐项确认。
 
-## 8. 后续扩展计划
+## 8. 开发与验证闭环
+
+KDA forward 的开发应按“语义 -> 结构 -> 单算子 -> 组合 -> 精度 -> 性能 -> 回归”推进。推荐流程：
+
+1. 先对齐三方对标实现的数学语义，确认 `Aqk/Akk/w/u/qg/kg/v_new/h/o/final_state` 的公式、dtype 和返回顺序。
+2. 再对齐本仓可复用 NPU 模块：
+   - GDN `ChunkGatedDeltaRuleFwdH` 用于跨 chunk 状态传播。
+   - GDN `solve_tri`/MCH 设计用于三角求逆思路。
+   - Catlass cube GEMM 用于矩阵主路径。
+   - causal conv layout 转换思路用于 BSND/TND 与 BNSD/NTD 的边界设计。
+3. 每增加一个 L0/L2 拼接点，先做小 shape reference 对比，再做目标 shape sampled 对比。
+4. 出现精度异常时，必须先定位第一处偏差：
+   - `gk` 偏：先看 `KdaGateCumsum`。
+   - `Aqk/Akk` 偏：先看 gate factorization、mask、solve。
+   - `v_new/h/final_state` 偏：先看 GDN 状态传播、initial_state、chunk 顺序。
+   - `o` 偏：先看 `qg @ h` 和 `Aqk @ v_new` 两项是否分别对齐。
+5. 出现 NaN/Inf 时，不要先改阈值或输入 range。先检查是否存在：
+   - causal mask 前已经 `inf * 0 -> nan`。
+   - `g_i - g_j` 非法正跳。
+   - UB/GM 写回生命周期未闭合。
+   - partial chunk 脏行进入 cube/solve。
+6. 性能优化只能在精度第一现场明确后进行。目标形状中矩阵类计算必须保持 cube 主路径，不能为了修精度退回 scalar/逐元素循环。
+7. 每个已修复问题必须补“能稳定触发该问题”的回归用例，而不是只补更大的随机全量用例。
+
+## 9. 后续扩展计划
 
 建议后续工作：
 
