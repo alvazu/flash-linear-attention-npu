@@ -113,6 +113,8 @@ torch.ops.npu.npu_chunk_kda_fwd(
 
 BNSD 和 NTD 是性能布局，适用于上游 causal conv 已经完成数据排布转换的流水线。BSND 和 TND 是兼容布局，进入 kernel 前通过 `KdaLayoutSwap12` 转成内部布局。
 
+当前 TND 兼容布局仅支持 `H=1` 的 rank3 输入。多 K head 的 rank3 输入必须使用 NTD 性能布局 `[H, T, D]`；host 侧会直接拦截 `TND && H>1`，避免进入 `fwd_h` kernel 后触发非法访存。
+
 支持的数据类型（dtype）语义：
 
 - `q/k/v/o/Aqk/Akk/w/u/qg/kg/v_new/h`：根据张量角色跟随 `q` 或 `v` 的 dtype，算子注册覆盖 `fp16`、`bf16` 和 32 位浮点（fp32）；其中 `kg` 表示 key-gated k 中间张量，不是 `gk` 输入。

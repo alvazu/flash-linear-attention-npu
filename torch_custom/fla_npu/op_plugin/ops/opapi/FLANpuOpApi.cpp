@@ -517,6 +517,9 @@ npu_chunk_kda_fwd(
     int64_t K = is_rank3 ? q_sizes[2] : q_sizes[3];
     int64_t HV = is_tnd ? v_sizes[1] : (is_ntd ? v_sizes[0] : (is_bnsd ? v_sizes[1] : v_sizes[2]));
     int64_t V = is_rank3 ? v_sizes[2] : v_sizes[3];
+    TORCH_CHECK(!is_tnd || H == 1,
+                "npu_chunk_kda_fwd: TND layout with H > 1 is not supported; use NTD [H,T,D] layout "
+                "for multi-head rank3 input.");
     CheckKdaCuSeqlens(cu_seqlens, T, "npu_chunk_kda_fwd");
     CheckKdaChunkIndices(chunk_indices, "npu_chunk_kda_fwd");
     TORCH_CHECK(!cu_seqlens.has_value() || is_rank3 || B == 1,

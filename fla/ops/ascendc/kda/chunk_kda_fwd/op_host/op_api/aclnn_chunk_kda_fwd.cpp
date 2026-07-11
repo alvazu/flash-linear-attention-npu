@@ -314,6 +314,9 @@ aclnnStatus aclnnChunkKdaFwdGetWorkspaceSize(
                     (layout == KdaFwdLayout::BNSD ? KdaFwdDim(params.v, 1) : KdaFwdDim(params.v, 2)));
     int64_t vDim = isTnd ? KdaFwdDim(params.v, 2) : KdaFwdDim(params.v, 3);
     int64_t seqNum = KdaFwdSeqNum(batch, params.cuSeqlensOptional);
+    CHECK_COND(layout != KdaFwdLayout::TND || hNum == 1, ACLNN_ERR_PARAM_INVALID,
+               "TND layout with H > 1 is not supported by npu_chunk_kda_fwd; use NTD [H,T,D] layout "
+               "for multi-head rank3 input.");
     CHECK_RET(KdaFwdCheckCuSeqlens(params.cuSeqlensOptional, seqlen) == ACLNN_SUCCESS, ACLNN_ERR_PARAM_INVALID);
     CHECK_RET(KdaFwdCheckChunkIndices(params.chunkIndicesOptional) == ACLNN_SUCCESS, ACLNN_ERR_PARAM_INVALID);
     CHECK_COND(params.cuSeqlensOptional == nullptr || isTnd || batch == 1, ACLNN_ERR_PARAM_INVALID,

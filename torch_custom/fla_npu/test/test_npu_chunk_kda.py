@@ -347,6 +347,33 @@ def test_chunk_kda_fwd_tnd_matches_reference():
     _assert_close("initial_state tnd", got[11], initial_state)
 
 
+def test_chunk_kda_fwd_tnd_multi_head_rejected():
+    device = _device()
+    if device.type == "cpu":
+        return
+    t, h, hv, kdim, vdim = 128, 2, 2, 8, 16
+    q = torch.randn(t, h, kdim, device=device, dtype=torch.float16)
+    k = torch.randn(t, h, kdim, device=device, dtype=torch.float16)
+    v = torch.randn(t, hv, vdim, device=device, dtype=torch.float16)
+    gk = torch.randn(t, hv, kdim, device=device, dtype=torch.float32)
+    beta = torch.rand(t, hv, device=device, dtype=torch.float32)
+    try:
+        torch.ops.npu.npu_chunk_kda_fwd(
+            q,
+            k,
+            v,
+            gk,
+            beta,
+            kdim ** -0.5,
+            64,
+            output_final_state=True,
+        )
+    except RuntimeError as exc:
+        assert "TND layout with H > 1 is not supported" in str(exc)
+    else:
+        raise AssertionError("multi-head TND rank3 input must be rejected before kernel launch")
+
+
 def test_chunk_kda_fwd_bnsd_direct_matches_reference():
     device = _device()
     if device.type == "cpu":
@@ -582,6 +609,7 @@ if __name__ == "__main__":
     test_chunk_kda_fwd_bf16_gate_matches_reference()
     test_chunk_kda_fwd_fp16_matches_reference()
     test_chunk_kda_fwd_tnd_matches_reference()
+    test_chunk_kda_fwd_tnd_multi_head_rejected()
     test_kda_gate_cumsum_default_and_fwd_integration()
     test_kda_gate_cumsum_bnsd_direct_matches_reference()
     test_kda_gate_cumsum_ntd_direct_matches_reference()
