@@ -430,16 +430,16 @@ to_snake_name() {
   echo "$1" | sed -E 's/([A-Z]+)([A-Z][a-z])/\1_\2/g; s/([a-z0-9])([A-Z])/\1_\2/g' | tr '[:upper:]' '[:lower:]'
 }
 
-collect_source_op_names() {
-  local src_vendor="$1"
-  local src_abi_dir="${src_vendor}/op_api/include/aclnnop"
-  local src_kernel_root="${src_vendor}/op_impl/ai_core/tbe/kernel"
+collect_vendor_op_names() {
+  local vendor_dir="$1"
+  local abi_dir="${vendor_dir}/op_api/include/aclnnop"
+  local kernel_root="${vendor_dir}/op_impl/ai_core/tbe/kernel"
 
   (
-    if [ -d "${src_abi_dir}" ]; then
-      while IFS= read -r src_file; do
+    if [ -d "${abi_dir}" ]; then
+      while IFS= read -r header_file; do
         local file_name
-        file_name=$(basename "${src_file}")
+        file_name=$(basename "${header_file}")
         case "${file_name}" in
           aclnn_ops_transformer*.h)
             continue
@@ -448,15 +448,78 @@ collect_source_op_names() {
             echo "${file_name}" | sed -E 's/^aclnn_(.*)\.h$/\1/'
             ;;
         esac
-      done < <(find "${src_abi_dir}" -type f -name 'aclnn_*.h' | sort)
+      done < <(find "${abi_dir}" -type f -name 'aclnn_*.h' | sort)
     fi
 
-    if [ -d "${src_kernel_root}" ]; then
+    if [ -d "${kernel_root}" ]; then
       while IFS= read -r src_op_dir; do
         to_snake_name "$(basename "${src_op_dir}")"
-      done < <(find "${src_kernel_root}" -mindepth 2 -maxdepth 2 -type d | sort)
+      done < <(find "${kernel_root}" -mindepth 2 -maxdepth 2 -type d | sort)
     fi
   ) | sort -u
+}
+
+log_op_scope_file() {
+  local title="$1"
+  local op_file="$2"
+  local level="$3"
+  local op_name
+
+  logandprint "[${level}]: ${title}"
+  if [ ! -s "${op_file}" ]; then
+    logandprint "[${level}]:   (none detected)"
+    return
+  fi
+
+  while IFS= read -r op_name; do
+    logandprint "[${level}]:   ${op_name}"
+  done <"${op_file}"
+}
+
+confirm_partial_shared_lib_impact() {
+  local src_vendor="$1"
+  local dst_vendor="$2"
+  local src_ops_file
+  local dst_ops_file
+  local unavailable_ops_file
+
+  src_ops_file=$(mktemp)
+  dst_ops_file=$(mktemp)
+  unavailable_ops_file=$(mktemp)
+
+  collect_vendor_op_names "${src_vendor}" >"${src_ops_file}"
+  collect_vendor_op_names "${dst_vendor}" >"${dst_ops_file}"
+  comm -23 "${dst_ops_file}" "${src_ops_file}" >"${unavailable_ops_file}"
+
+  log_op_scope_file "This run package contains operators:" "${src_ops_file}" "INFO"
+
+  if [ ! -s "${unavailable_ops_file}" ]; then
+    rm -f "${src_ops_file}" "${dst_ops_file}" "${unavailable_ops_file}"
+    return
+  fi
+
+  logandprint "[WARNING]: Installing this run package replaces shared opapi/tiling/proto libraries in the wheel with the scoped build from this package."
+  log_op_scope_file "The following installed operators are not included in this run package and will not be usable after replacement:" "${unavailable_ops_file}" "WARNING"
+  rm -f "${src_ops_file}" "${dst_ops_file}" "${unavailable_ops_file}"
+
+  if [ "${IS_QUIET}" = "y" ]; then
+    logandprint "[WARNING]: --quiet is set, treating partial shared-library replacement impact as confirmed."
+    return
+  fi
+
+  logandprint "[INFO]: Continue to replace the installed wheel shared libraries with this scoped run package? [y/n]"
+  while true; do
+    read yn
+    if [ "${yn}" = "y" ]; then
+      return
+    elif [ "${yn}" = "n" ]; then
+      logandprint "[INFO]: Exit without installing run package."
+      exitlog
+      exit 0
+    else
+      echo "[WARNING]: Input error, please input y or n to choose!"
+    fi
+  done
 }
 
 remove_deleted_aclnn_headers() {
@@ -480,7 +543,7 @@ remove_deleted_aclnn_headers() {
         rm -f "${dst_abi_dir}/${rel_file}"
       fi
     done
-  done < <(collect_source_op_names "${src_vendor}")
+  done < <(collect_vendor_op_names "${src_vendor}")
 }
 
 merge_vendor_to_wheel_opp() {
@@ -587,7 +650,7 @@ confirm_aclnn_abi_changes() {
         echo "DELETED  ${rel_file}" >>"${report_file}"
       fi
     done
-  done < <(collect_source_op_names "${src_vendor}")
+  done < <(collect_vendor_op_names "${src_vendor}")
 
   if [ ! -s "${report_file}" ]; then
     logandprint "[INFO]: No aclnn ABI header changes detected."
@@ -654,6 +717,7 @@ install_wheel_opp_package() {
   logandprint "[INFO]: Source vendor ${src_vendor}"
   logandprint "[INFO]: Target vendor ${dst_vendor}"
 
+  confirm_partial_shared_lib_impact "${src_vendor}" "${dst_vendor}"
   confirm_aclnn_abi_changes "${src_vendor}" "${dst_vendor}"
   merge_vendor_to_wheel_opp "${src_vendor}" "${dst_vendor}"
   update_wheel_vendors_config "${wheel_opp_root}/vendors" "fla_npu_transformer"

@@ -70,7 +70,7 @@ FLA_NPU_SOC=ascend910b FLA_NPU_INCREMENTAL_BUILD=1 python -m pip wheel --no-buil
 
 #### 方式 B：【备选】单独编译算子 run 包和 Python wheel
 
-只有在已经安装方式 A 的完整 wheel、但需要快速替换少量算子的 Ascend C 产物时，才建议使用该方式。run 包安装时会把当前 run 包里的 `packages/vendors/fla_npu_transformer` 合并覆盖到当前 Python 环境已安装的 `site-packages/fla_npu/opp/vendors/fla_npu_transformer`，从而更新 `aclnn`、tiling、kernel 和相关配置。
+只有在已经安装方式 A 的完整 wheel、但需要快速替换少量算子的 Ascend C 产物时，才建议使用该方式。`--ops=op1,op2,...` 只会生成指定算子的 run 包；run 包安装时会把当前 run 包里的 `packages/vendors/fla_npu_transformer` 合并覆盖到当前 Python 环境已安装的 `site-packages/fla_npu/opp/vendors/fla_npu_transformer`，从而更新 `aclnn`、tiling、kernel 和相关配置。
 
 ```sh
 # 编译一个或多个算子 run 包，--soc 需指定为当前机器芯片类型 {ascend910b/ascend910_93/ascend950}
@@ -99,7 +99,7 @@ python -m pip install --force-reinstall --no-deps dist/flash_linear_attention_np
 
 #### 方式 B 产物安装
 
-先确认方式 A 的完整 wheel 已经安装到当前 Python 环境，然后安装 run 包。安装器会在覆盖前列出 `op_api/include/aclnnop` 中新增、删除、修改的 aclnn ABI 头文件；删除只按当前 run 包携带的算子范围判断，非 `--quiet` 模式需要确认后才继续。
+先确认方式 A 的完整 wheel 已经安装到当前 Python 环境，然后安装 run 包。安装器会在覆盖前列出当前 run 包携带的算子；由于 `libcust_opapi.so`、tiling so、proto so 会被当前局部 run 包整体替换，安装器也会列出已安装 wheel 中不在当前 run 包范围内、替换后将不可用的算子。安装器还会列出 `op_api/include/aclnnop` 中新增、删除、修改的 aclnn ABI 头文件；删除只按当前 run 包携带的算子范围判断，非 `--quiet` 模式需要确认后才继续。
 
 ```sh
 # 覆盖当前 Python 环境中 flash-linear-attention-npu wheel 内嵌的 OPP
