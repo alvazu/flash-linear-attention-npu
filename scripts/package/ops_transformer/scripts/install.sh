@@ -430,6 +430,35 @@ to_snake_name() {
   echo "$1" | sed -E 's/([A-Z]+)([A-Z][a-z])/\1_\2/g; s/([a-z0-9])([A-Z])/\1_\2/g' | tr '[:upper:]' '[:lower:]'
 }
 
+color_status_tag() {
+  local color="$1"
+  local tag="$2"
+  local red
+  local yellow
+  local green
+  local reset
+
+  red=$(printf '\033[31m')
+  yellow=$(printf '\033[33m')
+  green=$(printf '\033[32m')
+  reset=$(printf '\033[0m')
+
+  case "${color}" in
+    red)
+      printf '%b[%s]%b' "${red}" "${tag}" "${reset}"
+      ;;
+    yellow)
+      printf '%b[%s]%b' "${yellow}" "${tag}" "${reset}"
+      ;;
+    green)
+      printf '%b[%s]%b' "${green}" "${tag}" "${reset}"
+      ;;
+    *)
+      printf '[%s]' "${tag}"
+      ;;
+  esac
+}
+
 collect_vendor_op_names() {
   local vendor_dir="$1"
   local abi_dir="${vendor_dir}/op_api/include/aclnnop"
@@ -459,6 +488,58 @@ collect_vendor_op_names() {
   ) | sort -u
 }
 
+collect_op_aclnn_abi_changes() {
+  local src_vendor="$1"
+  local dst_vendor="$2"
+  local op_name="$3"
+  local src_abi_dir="${src_vendor}/op_api/include/aclnnop"
+  local dst_abi_dir="${dst_vendor}/op_api/include/aclnnop"
+  local rel_file
+
+  for rel_file in "aclnn_${op_name}.h" "level2/aclnn_${op_name}.h"; do
+    if [ -f "${src_abi_dir}/${rel_file}" ] && [ ! -f "${dst_abi_dir}/${rel_file}" ]; then
+      echo "ADDED ${rel_file}"
+    elif [ -f "${src_abi_dir}/${rel_file}" ] && [ -f "${dst_abi_dir}/${rel_file}" ] && ! cmp -s "${src_abi_dir}/${rel_file}" "${dst_abi_dir}/${rel_file}"; then
+      echo "MODIFIED ${rel_file}"
+    elif [ ! -f "${src_abi_dir}/${rel_file}" ] && [ -f "${dst_abi_dir}/${rel_file}" ]; then
+      echo "DELETED ${rel_file}"
+    fi
+  done
+}
+
+op_has_source_aclnn_header() {
+  local src_vendor="$1"
+  local op_name="$2"
+  local src_abi_dir="${src_vendor}/op_api/include/aclnnop"
+
+  [ -f "${src_abi_dir}/aclnn_${op_name}.h" ] || [ -f "${src_abi_dir}/level2/aclnn_${op_name}.h" ]
+}
+
+format_change_summary() {
+  local change_file="$1"
+  local summary=""
+  local line
+
+  while IFS= read -r line; do
+    if [ -z "${summary}" ]; then
+      summary="${line}"
+    else
+      summary="${summary}; ${line}"
+    fi
+  done <"${change_file}"
+  echo "${summary}"
+}
+
+log_colored_op_status() {
+  local level="$1"
+  local color="$2"
+  local tag="$3"
+  local op_name="$4"
+  local reason="$5"
+
+  logandprint "[${level}]:   $(color_status_tag "${color}" "${tag}") ${op_name} - ${reason}"
+}
+
 log_op_scope_file() {
   local title="$1"
   local op_file="$2"
@@ -476,12 +557,37 @@ log_op_scope_file() {
   done <"${op_file}"
 }
 
+log_included_op_status() {
+  local src_vendor="$1"
+  local dst_vendor="$2"
+  local op_name="$3"
+  local changes_file
+  local summary
+
+  changes_file=$(mktemp)
+  collect_op_aclnn_abi_changes "${src_vendor}" "${dst_vendor}" "${op_name}" >"${changes_file}"
+  summary=$(format_change_summary "${changes_file}")
+
+  if grep -qE '^(MODIFIED|DELETED) ' "${changes_file}"; then
+    log_colored_op_status "WARNING" "red" "RED" "${op_name}" "unsupported after install because aclnn ABI changed: ${summary}"
+  elif grep -q '^ADDED ' "${changes_file}"; then
+    log_colored_op_status "WARNING" "yellow" "YELLOW" "${op_name}" "included in run package, but aclnn ABI is new in the installed wheel: ${summary}"
+  elif ! op_has_source_aclnn_header "${src_vendor}" "${op_name}"; then
+    log_colored_op_status "WARNING" "yellow" "YELLOW" "${op_name}" "included in run package, but no aclnn ABI header was found to compare"
+  else
+    log_colored_op_status "INFO" "green" "GREEN" "${op_name}" "included in run package and aclnn ABI is unchanged"
+  fi
+
+  rm -f "${changes_file}"
+}
+
 confirm_partial_shared_lib_impact() {
   local src_vendor="$1"
   local dst_vendor="$2"
   local src_ops_file
   local dst_ops_file
   local unavailable_ops_file
+  local op_name
 
   src_ops_file=$(mktemp)
   dst_ops_file=$(mktemp)
@@ -493,13 +599,25 @@ confirm_partial_shared_lib_impact() {
 
   log_op_scope_file "This run package contains operators:" "${src_ops_file}" "INFO"
 
+  logandprint "[INFO]: Operator support status after installing this run package:"
+  logandprint "[INFO]:   $(color_status_tag "red" "RED") unsupported after install"
+  logandprint "[INFO]:   $(color_status_tag "yellow" "YELLOW") requires manual attention"
+  logandprint "[INFO]:   $(color_status_tag "green" "GREEN") supported after install"
+
+  while IFS= read -r op_name; do
+    log_included_op_status "${src_vendor}" "${dst_vendor}" "${op_name}"
+  done <"${src_ops_file}"
+
   if [ ! -s "${unavailable_ops_file}" ]; then
     rm -f "${src_ops_file}" "${dst_ops_file}" "${unavailable_ops_file}"
     return
   fi
 
   logandprint "[WARNING]: Installing this run package replaces shared opapi/tiling/proto libraries in the wheel with the scoped build from this package."
-  log_op_scope_file "The following installed operators are not included in this run package and will not be usable after replacement:" "${unavailable_ops_file}" "WARNING"
+  logandprint "[WARNING]: The following installed operators are not included in this run package and will not be usable after replacement:"
+  while IFS= read -r op_name; do
+    log_colored_op_status "WARNING" "red" "RED" "${op_name}" "not included in this run package; shared opapi/tiling/proto libraries will be replaced"
+  done <"${unavailable_ops_file}"
   rm -f "${src_ops_file}" "${dst_ops_file}" "${unavailable_ops_file}"
 
   if [ "${IS_QUIET}" = "y" ]; then
