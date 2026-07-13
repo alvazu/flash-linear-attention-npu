@@ -1,5 +1,6 @@
 # Copyright (c) 2026 Tianjin University, Ltd.
 
+import os
 import pathlib
 import sys
 
@@ -21,10 +22,120 @@ sys.path.insert(0, str(ROOT))
 from tests.reference.chunk_kda_reference import chunk_kda_forward_reference  # noqa: E402
 
 
-def _device():
+MODEL_SHAPE_CASE = {
+    "t": 131072,
+    "h": 2,
+    "hv": 2,
+    "kdim": 128,
+    "vdim": 128,
+    "chunk_size": 64,
+    "cu_seqlens": [0, 31739, 55973, 78732, 97530, 115345, 130191, 131071, 131072],
+    "safe_gate": True,
+    "lower_bound": -5.0,
+    "seed": 20260711,
+}
+MODEL_SHAPE_DUMP = pathlib.Path(os.environ.get("KDA_MODEL_SHAPE_DUMP", "/tmp/kda_model_shape_case.pt"))
+RUN_MODEL_SHAPE_TEST_ENV = "RUN_KDA_MODEL_SHAPE_TEST"
+
+
+def _device(device_id=None):
+    if device_id is None:
+        device_id = int(os.environ.get("TEST_DEVICE_ID", "0"))
     if torch_npu is not None and hasattr(torch, "npu") and torch.npu.is_available():
-        return torch.device("npu:0")
+        return torch.device(f"npu:{device_id}")
     return torch.device("cpu")
+
+
+def _stat(tensor, name):
+    if hasattr(tensor, "is_npu") and tensor.is_npu:
+        torch.npu.synchronize()
+    flat = tensor.detach().flatten().float().cpu()
+    has_nan = torch.isnan(flat).any().item()
+    has_inf = torch.isinf(flat).any().item()
+    nan_ratio = torch.isnan(flat).float().mean().item()
+    finite = flat[torch.isfinite(flat)]
+    if finite.numel() == 0:
+        finite = torch.zeros(1, dtype=torch.float32)
+    quant_src = finite
+    if quant_src.numel() > 5_000_000:
+        sample_idx = torch.randint(0, quant_src.numel(), (5_000_000,))
+        quant_src = quant_src[sample_idx]
+    return {
+        "name": name,
+        "shape": tuple(tensor.shape),
+        "dtype": str(tensor.dtype),
+        "device": str(tensor.device),
+        "min": finite.min().item(),
+        "max": finite.max().item(),
+        "mean": quant_src.mean().item(),
+        "std": quant_src.std().item(),
+        "has_nan": has_nan,
+        "has_inf": has_inf,
+        "nan_ratio": nan_ratio,
+        "percentile_1": torch.quantile(quant_src, 0.01).item(),
+        "percentile_99": torch.quantile(quant_src, 0.99).item(),
+    }
+
+
+def _print_stat(stat_dict, prefix=""):
+    s = stat_dict
+    print(
+        f"{prefix}{s['name']:18s} | "
+        f"shape={s['shape']} {s['dtype']:12s} | "
+        f"min={s['min']:10.4f} max={s['max']:10.4f} | "
+        f"mean={s['mean']:8.4f} std={s['std']:8.4f} | "
+        f"p1={s['percentile_1']:8.4f} p99={s['percentile_99']:8.4f} | "
+        f"nan={s['has_nan']} inf={s['has_inf']} nan_ratio={s['nan_ratio']:.4f}"
+    )
+
+
+def _l2norm_fwd_torch(x, eps=1e-6):
+    x_float = x.float()
+    rstd = torch.rsqrt(x_float.pow(2).sum(dim=-1, keepdim=True) + eps)
+    y = (x_float * rstd).to(x.dtype)
+    return y, rstd.to(x.dtype)
+
+
+def _make_model_shape_kda_dump(case=None, dump_path=None):
+    case = dict(MODEL_SHAPE_CASE if case is None else case)
+    dump_path = MODEL_SHAPE_DUMP if dump_path is None else pathlib.Path(dump_path)
+    torch.manual_seed(case["seed"])
+
+    t = case["t"]
+    h = case["h"]
+    hv = case["hv"]
+    kdim = case["kdim"]
+    vdim = case["vdim"]
+    seq_num = len(case["cu_seqlens"]) - 1
+
+    q = (torch.randn(1, t, h, kdim, dtype=torch.float32) * 0.05).to(torch.bfloat16)
+    k = (torch.randn(1, t, h, kdim, dtype=torch.float32) * 0.05).to(torch.bfloat16)
+    v = (torch.randn(1, t, hv, vdim, dtype=torch.float32) * 0.05).to(torch.bfloat16)
+    g = (torch.randn(1, t, hv, kdim, dtype=torch.float32) * 1.25).to(torch.bfloat16)
+    beta = torch.sigmoid(torch.randn(1, t, hv, dtype=torch.float32) * 0.35 + 1.5)
+    a_log = torch.randn(hv, dtype=torch.float32) * 0.12
+    dt_bias = torch.randn(hv * kdim, dtype=torch.float32) * 1.65 - 3.0
+    initial_state = torch.randn(seq_num, hv, kdim, vdim, dtype=torch.float32) * 0.02
+
+    dump_path.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(
+        {
+            "q": q,
+            "k": k,
+            "v": v,
+            "g": g,
+            "beta": beta,
+            "A_log": a_log,
+            "dt_bias": dt_bias,
+            "cu_seqlens": torch.tensor(case["cu_seqlens"], dtype=torch.int64),
+            "initial_state": initial_state,
+            "safe_gate": case["safe_gate"],
+            "lower_bound": case["lower_bound"],
+            "chunk_size": case["chunk_size"],
+        },
+        dump_path,
+    )
+    return dump_path
 
 
 def _make_inputs(device, b=1, h=2, hv=2, t=64, kdim=32, vdim=64, dtype=torch.float32):
@@ -76,6 +187,155 @@ def _kda_gate_cumsum_reference(g, chunk_size, A_log=None, dt_bias=None, use_gate
             end = min(start + chunk_size, g.shape[0])
             out[start:end] = torch.cumsum(gate[start:end] * rcp_ln2, dim=0)
     return out
+
+
+def test_chunk_kda_fwd_model_shape_with_stats(dump_path=None, device_id=None):
+    device = _device(device_id)
+    if device.type == "cpu":
+        print("skip model-shape stats test on CPU")
+        return
+    if os.environ.get(RUN_MODEL_SHAPE_TEST_ENV) != "1":
+        print(f"skip model-shape stats test; set {RUN_MODEL_SHAPE_TEST_ENV}=1 to enable")
+        return
+
+    dump_path = pathlib.Path(dump_path) if dump_path is not None else MODEL_SHAPE_DUMP
+    if not dump_path.exists():
+        dump_path = _make_model_shape_kda_dump(dump_path=dump_path)
+
+    torch.npu.set_device(device.index or 0)
+    data = torch.load(dump_path, map_location="cpu")
+
+    q = data["q"].to(device, non_blocking=True)
+    k = data["k"].to(device, non_blocking=True)
+    v = data["v"].to(device, non_blocking=True)
+    g = data["g"].to(device, non_blocking=True)
+    beta = data["beta"].to(device, non_blocking=True)
+    a_log = data["A_log"].to(device, non_blocking=True, dtype=torch.float32)
+    dt_bias = data["dt_bias"].to(device, non_blocking=True, dtype=torch.float32)
+    cu_seqlens = data["cu_seqlens"].to(device, non_blocking=True).tolist()
+    initial_state = data["initial_state"].to(device, non_blocking=True)
+
+    scale = q.shape[-1] ** -0.5
+    chunk_size = int(data.get("chunk_size", MODEL_SHAPE_CASE["chunk_size"]))
+    safe_gate = data.get("safe_gate", True)
+    lower_bound = float(data.get("lower_bound", -5.0))
+
+    print("\n" + "=" * 80)
+    print(f"=== KDA Forward Model-Shape Guard (device={device}) ===")
+    print("=" * 80)
+    print(f"[Meta] scale={scale:.6f}, chunk_size={chunk_size}")
+    print(f"[Meta] cu_seqlens={cu_seqlens}")
+    print(f"[Meta] safe_gate={safe_gate}, lower_bound={lower_bound}")
+    print(f"[Meta] dump_path={dump_path}")
+
+    print("\n--- Input Statistics ---")
+    for name, tensor in [
+        ("q", q),
+        ("k", k),
+        ("v", v),
+        ("g_raw", g),
+        ("beta", beta),
+        ("A_log", a_log),
+        ("dt_bias", dt_bias),
+        ("initial_state", initial_state),
+    ]:
+        _print_stat(_stat(tensor, name), "  ")
+
+    q, q_rstd = _l2norm_fwd_torch(q)
+    k, k_rstd = _l2norm_fwd_torch(k)
+    print("\n--- After L2Norm ---")
+    _print_stat(_stat(q, "q_norm"), "  ")
+    _print_stat(_stat(k, "k_norm"), "  ")
+    _print_stat(_stat(q_rstd, "q_rstd"), "  ")
+    _print_stat(_stat(k_rstd, "k_rstd"), "  ")
+
+    print("\n--- Gate Cumsum ---")
+    gk = torch.ops.npu.npu_kda_gate_cumsum(
+        g,
+        chunk_size,
+        A_log=a_log,
+        dt_bias=dt_bias,
+        use_gate_in_kernel=True,
+        safe_gate=safe_gate,
+        lower_bound=lower_bound,
+    )
+    ref_gk = _kda_gate_cumsum_reference(
+        g.detach().cpu(),
+        chunk_size,
+        A_log=a_log.detach().cpu(),
+        dt_bias=dt_bias.detach().cpu(),
+        use_gate_in_kernel=True,
+        safe_gate=safe_gate,
+        lower_bound=lower_bound,
+    )
+    _print_stat(_stat(gk, "gk_npu"), "  ")
+    _print_stat(_stat(ref_gk, "gk_ref"), "  ")
+    _assert_close("model shape gate cumsum", gk, ref_gk, rtol=2e-3, atol=2e-3)
+
+    q_ntd = q.squeeze(0).permute(1, 0, 2).contiguous()
+    k_ntd = k.squeeze(0).permute(1, 0, 2).contiguous()
+    v_ntd = v.squeeze(0).permute(1, 0, 2).contiguous()
+    gk_ntd = gk.squeeze(0).permute(1, 0, 2).contiguous()
+    beta_nt = beta.squeeze(0).permute(1, 0).contiguous()
+
+    print("\n--- Chunk KDA Forward ---")
+    got = torch.ops.npu.npu_chunk_kda_fwd(
+        q_ntd,
+        k_ntd,
+        v_ntd,
+        gk_ntd,
+        beta_nt,
+        scale,
+        chunk_size,
+        layout="NTD",
+        initial_state=initial_state,
+        cu_seqlens=cu_seqlens,
+        output_final_state=True,
+        return_intermediate=False,
+    )
+    o_npu, final_state_npu = got[0], got[1]
+    _print_stat(_stat(o_npu, "o_npu"), "  ")
+    _print_stat(_stat(final_state_npu, "final_state_npu"), "  ")
+    assert torch.isfinite(o_npu).all().item(), "model shape o contains NaN or Inf"
+    assert torch.isfinite(final_state_npu).all().item(), "model shape final_state contains NaN or Inf"
+
+    print("\n--- CPU Reference ---")
+    ref = chunk_kda_forward_reference(
+        q.detach().cpu(),
+        k.detach().cpu(),
+        v.detach().cpu(),
+        ref_gk.cpu(),
+        beta.detach().cpu(),
+        scale=scale,
+        chunk_size=chunk_size,
+        initial_state=initial_state.detach().cpu(),
+        output_final_state=True,
+        cu_seqlens=torch.tensor(cu_seqlens, dtype=torch.int64),
+    )
+    ref_o_ntd = ref.o.squeeze(0).permute(1, 0, 2).contiguous()
+    _print_stat(_stat(ref_o_ntd, "o_ref"), "  ")
+    _print_stat(_stat(ref.final_state, "final_state_ref"), "  ")
+
+    o_diff = (o_npu.detach().cpu() - ref_o_ntd).abs()
+    fs_diff = (final_state_npu.detach().cpu() - ref.final_state).abs()
+    print("\n--- Diff (NPU vs CPU Ref) ---")
+    _print_stat(_stat(o_diff, "o_abs_diff"), "  ")
+    _print_stat(_stat(fs_diff, "fs_abs_diff"), "  ")
+
+    finite_o = torch.isfinite(ref_o_ntd)
+    finite_state = torch.isfinite(ref.final_state)
+    _assert_close("model shape o", o_npu.detach().cpu()[finite_o], ref_o_ntd[finite_o], rtol=5e-2, atol=5e-2)
+    _assert_close(
+        "model shape final_state",
+        final_state_npu.detach().cpu()[finite_state],
+        ref.final_state[finite_state],
+        rtol=5e-2,
+        atol=5e-2,
+    )
+
+
+def test_chunk_kda_fwd_from_dump_with_stats(dump_path: str, device_id=None):
+    test_chunk_kda_fwd_model_shape_with_stats(dump_path=dump_path, device_id=device_id)
 
 
 def test_chunk_kda_fwd_matches_reference():
@@ -677,3 +937,4 @@ if __name__ == "__main__":
     test_kda_gate_cumsum_ntd_direct_matches_reference()
     test_kda_gate_cumsum_safe_gate_matches_reference()
     test_kda_gate_cumsum_safe_gate_multitask_last_row_matches_reference()
+    test_chunk_kda_fwd_model_shape_with_stats()
