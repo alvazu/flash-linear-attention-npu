@@ -1,7 +1,18 @@
+# -----------------------------------------------------------------------------------------------------------
+# Copyright (c) 2026 Tianjin University, Ltd.
+# This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+# CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the License.
+# -----------------------------------------------------------------------------------------------------------
+
 """Ascend C backed FLA NPU operators.
 
-This module provides stable Python import paths backed by Python ctypes
-aclnn calls plus compatibility helpers for the legacy PyTorch dispatcher.
+This module provides stable Python import paths backed by Python ctypes aclnn
+calls.  Compatibility helpers for legacy torch_npu/torch.ops.npu call sites are
+kept opt-in and are not installed during normal import.
 """
 
 from __future__ import annotations
@@ -48,7 +59,7 @@ _DIRECT_RUNTIME_ERROR: Optional[Exception] = None
 
 
 def _prepare_direct_runtime(*, raise_on_error: bool = True) -> None:
-    """Prepare embedded OPP paths before torch_npu initializes the NPU runtime."""
+    """Prepare embedded OPP paths and load custom op_api libraries."""
 
     global _DIRECT_RUNTIME_ERROR, _DIRECT_RUNTIME_READY
     if _DIRECT_RUNTIME_READY:
@@ -352,7 +363,6 @@ globals()["fast_gelu_custom"] = fast_gelu_custom
 globals()["causal_conv1d"] = causal_conv1d
 
 _prepare_direct_runtime(raise_on_error=False)
-install_torch_npu_ops_compat()
 
 __all__ = [
     "BACKWARD_OPS",

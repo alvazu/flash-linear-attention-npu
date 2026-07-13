@@ -1,28 +1,59 @@
-"""ctypes backed aclnn calls for FLA NPU Ascend C operators."""
+# -----------------------------------------------------------------------------------------------------------
+# Copyright (c) 2026 Tianjin University, Ltd.
+# This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+# CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the License.
+# -----------------------------------------------------------------------------------------------------------
+
+"""ctypes backed Python wrappers for FLA NPU Ascend C operators.
+
+This file intentionally contains only concrete operator wrappers and their ABI
+quirks.  Shared descriptor, workspace and stream handling lives in ``_runtime``
+so a new operator developer only needs to mirror the matching ``aclnn_*.h``
+signature here.
+"""
 
 from __future__ import annotations
 
 import ctypes
-from collections import deque
-from typing import Iterable, Optional, Sequence
 
+from ._runtime import (
+    call_aclnn as _runtime_call_aclnn,
+    chunk_num as _chunk_num,
+    empty as _empty,
+    empty_like as _empty_like,
+    optional_bool as _optional_bool,
+    optional_float as _optional_float,
+    optional_int as _optional_int,
+    shape as _shape,
+    zeros as _zeros,
+)
 
-ACL_SUCCESS = 0
-ACL_FORMAT_NCHW = 0
-ACL_FORMAT_ND = 2
-ACL_FORMAT_NCDHW = 30
-ACL_FORMAT_NCL = 47
-
-_ACL_FORMAT_BY_NAME = {
-    "NCHW": ACL_FORMAT_NCHW,
-    "ND": ACL_FORMAT_ND,
-    "NCDHW": ACL_FORMAT_NCDHW,
-    "NCL": ACL_FORMAT_NCL,
-}
-
-_RECENT_LAUNCH_STORAGE = deque(maxlen=128)
-
+# Most aclnn functions only receive pointer-sized descriptors and scalar ctypes
+# objects, so ctypes can call them without explicit argtypes.  Functions with C
+# strings or otherwise ambiguous scalar conversion are listed here to prevent
+# ctypes from narrowing or mis-converting arguments.
 _GET_WORKSPACE_ARGTYPES = {
+    "aclnnCausalConv1dBwd": [
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_int64,
+        ctypes.c_char_p,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.POINTER(ctypes.c_uint64),
+        ctypes.POINTER(ctypes.c_void_p),
+    ],
     "aclnnSolveTri": [
         ctypes.c_void_p,
         ctypes.c_void_p,
@@ -35,315 +66,13 @@ _GET_WORKSPACE_ARGTYPES = {
 }
 
 
-def _dtype_to_acl(dtype) -> int:
-    import torch
-
-    mapping = {
-        torch.float32: 0,  # ACL_FLOAT
-        torch.float16: 1,  # ACL_FLOAT16
-        torch.int8: 2,  # ACL_INT8
-        torch.int32: 3,  # ACL_INT32
-        torch.uint8: 4,  # ACL_UINT8
-        torch.int16: 6,  # ACL_INT16
-        torch.int64: 9,  # ACL_INT64
-        torch.float64: 11,  # ACL_DOUBLE
-        torch.bool: 12,  # ACL_BOOL
-        torch.bfloat16: 27,  # ACL_BF16
-    }
-    try:
-        return mapping[dtype]
-    except KeyError as exc:
-        raise TypeError(f"Unsupported dtype for aclnn tensor descriptor: {dtype}") from exc
-
-
-def _shape(tensor) -> tuple[int, ...]:
-    return tuple(int(dim) for dim in tensor.shape)
-
-
-def _stride(tensor) -> tuple[int, ...]:
-    return tuple(int(dim) for dim in tensor.stride())
-
-
-def _storage_numel(tensor) -> int:
-    try:
-        nbytes = tensor.untyped_storage().nbytes()
-    except AttributeError:
-        nbytes = tensor.storage().nbytes()
-    return int(nbytes // tensor.element_size())
-
-
-def _storage_data_ptr(tensor) -> int:
-    try:
-        return int(tensor.untyped_storage().data_ptr())
-    except AttributeError:
-        return int(tensor.storage().data_ptr())
-
-
-def _format(tensor) -> int:
-    try:
-        import torch_npu
-
-        npu_format = torch_npu.get_npu_format(tensor)
-    except Exception:
-        npu_format = None
-
-    if isinstance(npu_format, str):
-        acl_format = _ACL_FORMAT_BY_NAME.get(npu_format)
-        if acl_format is not None:
-            return acl_format
-    elif npu_format is not None:
-        try:
-            return int(npu_format)
-        except (TypeError, ValueError):
-            pass
-
-    dim = tensor.dim()
-    if dim == 3:
-        return ACL_FORMAT_NCL
-    if dim == 4:
-        return ACL_FORMAT_NCHW
-    if dim == 5:
-        return ACL_FORMAT_NCDHW
-    return ACL_FORMAT_ND
-
-
-def _ensure_npu_tensor(tensor, name: str):
-    if tensor is None:
-        return None
-    if not hasattr(tensor, "device") or tensor.device.type != "npu":
-        raise TypeError(f"{name} must be a torch NPU tensor, got {type(tensor)!r}.")
-    return tensor
-
-
-def _optional_bool(value, default: bool) -> bool:
-    return default if value is None else bool(value)
-
-
-def _optional_int(value, default: int) -> int:
-    return default if value is None else int(value)
-
-
-def _optional_float(value, default: float) -> float:
-    return default if value is None else float(value)
-
-
-def _chunk_num(total_tokens: int, chunk_size: int, chunk_indices: Optional[Sequence[int]]) -> int:
-    if chunk_indices is not None:
-        return len(chunk_indices) // 2
-    return (total_tokens + chunk_size - 1) // chunk_size
-
-
-def _current_stream_ptr() -> int:
-    import torch
-
-    stream = torch.npu.current_stream()
-    return int(getattr(stream, "npu_stream"))
-
-
-def _empty_like(tensor, *, dtype=None):
-    import torch
-
-    dtype = dtype or tensor.dtype
-    return torch.empty_like(tensor, dtype=dtype)
-
-
-def _empty(shape: Iterable[int], like, *, dtype=None):
-    import torch
-
-    return torch.empty(tuple(int(dim) for dim in shape), device=like.device, dtype=dtype or like.dtype)
-
-
-def _zeros(shape: Iterable[int], like, *, dtype=None):
-    import torch
-
-    return torch.zeros(tuple(int(dim) for dim in shape), device=like.device, dtype=dtype or like.dtype)
-
-
-class _AclTensor:
-    def __init__(self, runtime: "_AclnnRuntime", tensor):
-        tensor = _ensure_npu_tensor(tensor, "tensor")
-        self._runtime = runtime
-        self._tensor = tensor
-        self._shape = (ctypes.c_int64 * tensor.dim())(*_shape(tensor))
-        self._stride = (ctypes.c_int64 * tensor.dim())(*_stride(tensor))
-        self._storage_shape = (ctypes.c_int64 * 1)(_storage_numel(tensor))
-        self.ptr = runtime.acl_create_tensor(
-            self._shape,
-            ctypes.c_uint64(tensor.dim()),
-            ctypes.c_int(_dtype_to_acl(tensor.dtype)),
-            self._stride,
-            ctypes.c_int64(int(tensor.storage_offset())),
-            ctypes.c_int(_format(tensor)),
-            self._storage_shape,
-            ctypes.c_uint64(1),
-            ctypes.c_void_p(_storage_data_ptr(tensor)),
-        )
-        if not self.ptr:
-            raise RuntimeError("aclCreateTensor returned nullptr.")
-
-    def destroy(self) -> None:
-        if self.ptr:
-            self._runtime.acl_destroy_tensor(self.ptr)
-        self.ptr = None
-
-
-class _AclIntArray:
-    def __init__(self, runtime: "_AclnnRuntime", values: Optional[Sequence[int]]):
-        self._runtime = runtime
-        self.ptr = None
-        if values is None:
-            return
-        values = tuple(int(value) for value in values)
-        if not values:
-            return
-        self._values = (ctypes.c_int64 * len(values))(*values)
-        self.ptr = runtime.acl_create_int_array(self._values, ctypes.c_uint64(len(values)))
-        if not self.ptr:
-            raise RuntimeError("aclCreateIntArray returned nullptr.")
-
-    def destroy(self) -> None:
-        if self.ptr:
-            self._runtime.acl_destroy_int_array(self.ptr)
-        self.ptr = None
-
-
-class _CallContext:
-    def __init__(self, runtime: "_AclnnRuntime"):
-        self.runtime = runtime
-        self.resources = []
-        self.keepalive_tensors = []
-
-    def tensor(self, tensor, name: str = "tensor") -> ctypes.c_void_p:
-        if tensor is None:
-            return ctypes.c_void_p()
-        desc = _AclTensor(self.runtime, _ensure_npu_tensor(tensor, name))
-        self.resources.append(desc)
-        return ctypes.c_void_p(desc.ptr)
-
-    def int_array(self, values: Optional[Sequence[int]]) -> ctypes.c_void_p:
-        desc = _AclIntArray(self.runtime, values)
-        self.resources.append(desc)
-        return ctypes.c_void_p(desc.ptr or 0)
-
-    def int_tensor(self, values: Optional[Sequence[int]], device) -> ctypes.c_void_p:
-        if values is None:
-            return ctypes.c_void_p()
-        import torch
-
-        tensor = torch.as_tensor(tuple(int(value) for value in values), dtype=torch.int64, device=device)
-        self.keepalive_tensors.append(tensor)
-        return self.tensor(tensor, "int tensor")
-
-    def destroy(self) -> None:
-        for resource in reversed(self.resources):
-            resource.destroy()
-        self.resources.clear()
-
-
-class _AclnnRuntime:
-    def __init__(self):
-        import fla_npu
-
-        self._libraries = fla_npu.load_ascendc_opapi_libraries()
-        self._symbols = {}
-        self.acl_create_tensor = self.symbol("aclCreateTensor")
-        self.acl_create_tensor.argtypes = [
-            ctypes.POINTER(ctypes.c_int64),
-            ctypes.c_uint64,
-            ctypes.c_int,
-            ctypes.POINTER(ctypes.c_int64),
-            ctypes.c_int64,
-            ctypes.c_int,
-            ctypes.POINTER(ctypes.c_int64),
-            ctypes.c_uint64,
-            ctypes.c_void_p,
-        ]
-        self.acl_create_tensor.restype = ctypes.c_void_p
-
-        self.acl_destroy_tensor = self.symbol("aclDestroyTensor")
-        self.acl_destroy_tensor.argtypes = [ctypes.c_void_p]
-        self.acl_destroy_tensor.restype = ctypes.c_int
-
-        self.acl_create_int_array = self.symbol("aclCreateIntArray")
-        self.acl_create_int_array.argtypes = [ctypes.POINTER(ctypes.c_int64), ctypes.c_uint64]
-        self.acl_create_int_array.restype = ctypes.c_void_p
-
-        self.acl_destroy_int_array = self.symbol("aclDestroyIntArray")
-        self.acl_destroy_int_array.argtypes = [ctypes.c_void_p]
-        self.acl_destroy_int_array.restype = ctypes.c_int
-
-    def symbol(self, name: str):
-        if name in self._symbols:
-            return self._symbols[name]
-        for library in self._libraries:
-            try:
-                symbol = getattr(library, name)
-            except AttributeError:
-                continue
-            self._symbols[name] = symbol
-            return symbol
-        raise AttributeError(f"Unable to resolve aclnn symbol {name}.")
-
-    def call(self, name: str, args: Sequence[object], outputs: Sequence[object]):
-        get_workspace = self.symbol(f"{name}GetWorkspaceSize")
-        launch = self.symbol(name)
-        get_workspace.restype = ctypes.c_int
-        if name in _GET_WORKSPACE_ARGTYPES:
-            get_workspace.argtypes = _GET_WORKSPACE_ARGTYPES[name]
-        launch.argtypes = [ctypes.c_void_p, ctypes.c_uint64, ctypes.c_void_p, ctypes.c_void_p]
-        launch.restype = ctypes.c_int
-        workspace_size = ctypes.c_uint64(0)
-        executor = ctypes.c_void_p()
-
-        ret = get_workspace(*args, ctypes.byref(workspace_size), ctypes.byref(executor))
-        if ret != ACL_SUCCESS:
-            raise RuntimeError(f"{name}GetWorkspaceSize failed with aclnnStatus={ret}.")
-
-        workspace = None
-        workspace_ptr = ctypes.c_void_p()
-        if workspace_size.value:
-            import torch
-
-            device = outputs[0].device
-            workspace = torch.empty((int(workspace_size.value),), dtype=torch.uint8, device=device)
-            workspace_ptr = ctypes.c_void_p(int(workspace.data_ptr()))
-
-        ret = launch(
-            workspace_ptr,
-            ctypes.c_uint64(workspace_size.value),
-            executor,
-            ctypes.c_void_p(_current_stream_ptr()),
-        )
-        if ret != ACL_SUCCESS:
-            raise RuntimeError(f"{name} failed with aclnnStatus={ret}.")
-        return workspace
-
-
-_RUNTIME: Optional[_AclnnRuntime] = None
-
-
-def _runtime() -> _AclnnRuntime:
-    global _RUNTIME
-    if _RUNTIME is None:
-        _RUNTIME = _AclnnRuntime()
-    return _RUNTIME
-
-
-def _finalize(outputs, workspace, keepalive_tensors):
-    _RECENT_LAUNCH_STORAGE.append((tuple(outputs), workspace, tuple(keepalive_tensors)))
-
-
 def _call_aclnn(name: str, build_args, outputs):
-    runtime = _runtime()
-    ctx = _CallContext(runtime)
-    outputs_tuple = outputs if isinstance(outputs, tuple) else (outputs,)
-    try:
-        args = build_args(ctx)
-        workspace = runtime.call(name, args, outputs_tuple)
-    finally:
-        ctx.destroy()
-    _finalize(outputs_tuple, workspace, ctx.keepalive_tensors)
-    return outputs
+    return _runtime_call_aclnn(
+        name,
+        build_args,
+        outputs,
+        get_workspace_argtypes=_GET_WORKSPACE_ARGTYPES.get(name),
+    )
 
 
 def npu_fast_gelu_custom(self):
