@@ -77,7 +77,6 @@ def _prepare_embedded_opp() -> pathlib.Path:
     op_api_lib = vendor_dir / "op_api" / "lib" / "libcust_opapi.so"
     if not op_api_lib.exists():
         raise FileNotFoundError(f"Embedded custom op_api library not found: {op_api_lib}")
-    op_api_alias = op_api_lib.with_name("libopapi.so")
 
     _prepend_env_path("ASCEND_CUSTOM_OPP_PATH", vendor_dir)
     _prepend_env_path("ASCEND_CUSTOM_OPP_PATH", opp_root)
@@ -88,15 +87,19 @@ def _prepare_embedded_opp() -> pathlib.Path:
 
 
 def _load_shared_library(path_or_name) -> Optional[ctypes.CDLL]:
+    try:
+        return _load_shared_library_required(path_or_name)
+    except OSError:
+        return None
+
+
+def _load_shared_library_required(path_or_name) -> ctypes.CDLL:
     mode = (
         getattr(os, "RTLD_GLOBAL", 0)
         | getattr(os, "RTLD_NOW", 0)
         | getattr(os, "RTLD_NODELETE", 0)
     )
-    try:
-        return ctypes.CDLL(str(path_or_name), mode=mode)
-    except OSError:
-        return None
+    return ctypes.CDLL(str(path_or_name), mode=mode)
 
 
 def load_ascendc_opapi_libraries() -> list[ctypes.CDLL]:
@@ -108,24 +111,16 @@ def load_ascendc_opapi_libraries() -> list[ctypes.CDLL]:
 
     vendor_dir = _prepare_embedded_opp()
     op_api_dir = vendor_dir / "op_api" / "lib"
-    candidates = [
-        "libopapi.so",
-        op_api_dir / "libcust_opapi.so",
-    ]
+    custom_opapi = op_api_dir / "libcust_opapi.so"
 
-    libraries: list[ctypes.CDLL] = []
-    seen: set[str] = set()
-    for candidate in candidates:
-        key = str(candidate)
-        if key in seen:
-            continue
-        seen.add(key)
-        library = _load_shared_library(candidate)
-        if library is not None:
-            libraries.append(library)
-
-    if not libraries:
-        raise RuntimeError("Unable to load embedded FLA NPU or CANN op_api libraries.")
+    try:
+        custom_library = _load_shared_library_required(custom_opapi)
+    except OSError as exc:
+        raise RuntimeError(
+            f"Unable to load embedded FLA NPU custom op_api library: {custom_opapi}. "
+            f"Dynamic loader error: {exc}"
+        ) from exc
+    libraries = [custom_library]
 
     _ASCENDC_OPAPI_LIBRARIES = libraries
     return libraries

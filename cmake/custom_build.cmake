@@ -67,6 +67,7 @@ if (BUILD_OPEN_PROJECT)
     )
     target_sources(cust_opapi PRIVATE
             ${CMAKE_CURRENT_BINARY_DIR}/cust_opapi_stub.cpp
+            ${CMAKE_CURRENT_LIST_DIR}/cust_opapi_dlog_stub.cpp
     )
     target_compile_options(cust_opapi PRIVATE
             $<$<COMPILE_LANGUAGE:CXX>:-std=gnu++1z>
