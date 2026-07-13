@@ -1,7 +1,7 @@
 """Ascend C backed FLA NPU operators.
 
-This module provides stable Python import paths backed by direct pybind
-Ascend C calls plus compatibility helpers for the legacy PyTorch dispatcher.
+This module provides stable Python import paths backed by Python ctypes
+aclnn calls plus compatibility helpers for the legacy PyTorch dispatcher.
 """
 
 from __future__ import annotations
@@ -9,7 +9,9 @@ from __future__ import annotations
 import functools
 import types
 import warnings
-from typing import Callable
+from typing import Callable, Optional
+
+from ._aclnn_ctypes import ASCENDC_CTYPES_OPS
 
 _ASCENDC_OPS = (
     "npu_fast_gelu_custom",
@@ -40,6 +42,33 @@ _LEGACY_TORCH_OPS_WARNING = (
     "in a future fla_npu release. Use fla_npu.ops.ascendc.{public_name}(...) "
     "or the decoupled Ascend C API instead."
 )
+
+_DIRECT_RUNTIME_READY = False
+_DIRECT_RUNTIME_ERROR: Optional[Exception] = None
+
+
+def _prepare_direct_runtime(*, raise_on_error: bool = True) -> None:
+    """Prepare embedded OPP paths before torch_npu initializes the NPU runtime."""
+
+    global _DIRECT_RUNTIME_ERROR, _DIRECT_RUNTIME_READY
+    if _DIRECT_RUNTIME_READY:
+        return
+
+    try:
+        import fla_npu
+
+        fla_npu.load_ascendc_opapi_libraries()
+    except Exception as exc:
+        _DIRECT_RUNTIME_ERROR = exc
+        if raise_on_error:
+            raise RuntimeError(
+                "Unable to initialize fla_npu Ascend C op_api libraries. "
+                "Please source the CANN set_env.sh before importing "
+                "fla_npu.ops.ascendc or calling Ascend C operators."
+            ) from exc
+    else:
+        _DIRECT_RUNTIME_ERROR = None
+        _DIRECT_RUNTIME_READY = True
 
 
 def _torch_npu_namespace():
@@ -72,12 +101,11 @@ def _get_torch_op(name: str):
 
 @functools.lru_cache(maxsize=None)
 def _get_direct_op(name: str):
-    import fla_npu
-
-    extension = fla_npu.load_ascendc_extension()
-    if not hasattr(extension, name):
-        raise AttributeError(f"fla_npu.custom_aclnn_extension_lib has no direct Ascend C op {name}.")
-    return getattr(extension, name)
+    _prepare_direct_runtime()
+    try:
+        return ASCENDC_CTYPES_OPS[name]
+    except KeyError as exc:
+        raise AttributeError(f"fla_npu.ops.ascendc has no ctypes Ascend C op {name}.") from exc
 
 
 def _warn_legacy_torch_op(name: str) -> None:
@@ -322,6 +350,9 @@ for _name in _ASCENDC_OPS:
 
 globals()["fast_gelu_custom"] = fast_gelu_custom
 globals()["causal_conv1d"] = causal_conv1d
+
+_prepare_direct_runtime(raise_on_error=False)
+install_torch_npu_ops_compat()
 
 __all__ = [
     "BACKWARD_OPS",

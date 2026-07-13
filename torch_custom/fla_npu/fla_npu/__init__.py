@@ -1,17 +1,16 @@
 from __future__ import annotations
 
 import ctypes
-import importlib
 import os
 import pathlib
+from typing import Optional
 
 
 _PACKAGE_DIR = pathlib.Path(__file__).resolve().parent
 _DEFAULT_VENDOR_DIR = "fla_npu_transformer"
-_ASCENDC_EXTENSION_MODULE = None
-_ASCENDC_EXTENSION_LIBRARY: pathlib.Path | None = None
+_ASCENDC_OPAPI_LIBRARIES: Optional[list[ctypes.CDLL]] = None
 _LEGACY_TORCH_OPS_LOADED = False
-_LEGACY_TORCH_OPS_LIBRARY: pathlib.Path | None = None
+_LEGACY_TORCH_OPS_LIBRARY: Optional[pathlib.Path] = None
 
 
 def _prepend_env_path(name: str, value: pathlib.Path) -> None:
@@ -85,11 +84,51 @@ def _prepare_embedded_opp() -> pathlib.Path:
     _prepend_env_path("LD_LIBRARY_PATH", op_api_lib.parent)
     os.environ["FLA_NPU_OP_API_LIB"] = str(op_api_lib)
 
-    mode = getattr(os, "RTLD_GLOBAL", 0) | getattr(os, "RTLD_NOW", 0)
-    if op_api_alias.exists():
-        ctypes.CDLL(str(op_api_alias), mode=mode)
-    ctypes.CDLL(str(op_api_lib), mode=mode)
     return vendor_dir
+
+
+def _load_shared_library(path_or_name) -> Optional[ctypes.CDLL]:
+    mode = (
+        getattr(os, "RTLD_GLOBAL", 0)
+        | getattr(os, "RTLD_NOW", 0)
+        | getattr(os, "RTLD_NODELETE", 0)
+    )
+    try:
+        return ctypes.CDLL(str(path_or_name), mode=mode)
+    except OSError:
+        return None
+
+
+def load_ascendc_opapi_libraries() -> list[ctypes.CDLL]:
+    """Load embedded custom op_api and CANN aclnn libraries for ctypes calls."""
+
+    global _ASCENDC_OPAPI_LIBRARIES
+    if _ASCENDC_OPAPI_LIBRARIES is not None:
+        return _ASCENDC_OPAPI_LIBRARIES
+
+    vendor_dir = _prepare_embedded_opp()
+    op_api_dir = vendor_dir / "op_api" / "lib"
+    candidates = [
+        "libopapi.so",
+        op_api_dir / "libcust_opapi.so",
+    ]
+
+    libraries: list[ctypes.CDLL] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = str(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        library = _load_shared_library(candidate)
+        if library is not None:
+            libraries.append(library)
+
+    if not libraries:
+        raise RuntimeError("Unable to load embedded FLA NPU or CANN op_api libraries.")
+
+    _ASCENDC_OPAPI_LIBRARIES = libraries
+    return libraries
 
 
 def _find_ascendc_extension_library() -> pathlib.Path:
@@ -122,21 +161,9 @@ def _preload_torch_npu_dependencies(torch_module, torch_npu_module) -> None:
 
 
 def load_ascendc_extension():
-    """Load the direct Ascend C Python extension without torch.ops dispatcher."""
+    """Backward-compatible alias for loading the decoupled Ascend C runtime."""
 
-    global _ASCENDC_EXTENSION_MODULE, _ASCENDC_EXTENSION_LIBRARY
-    if _ASCENDC_EXTENSION_MODULE is not None:
-        return _ASCENDC_EXTENSION_MODULE
-
-    _prepare_embedded_opp()
-
-    import torch
-    import torch_npu
-
-    _preload_torch_npu_dependencies(torch, torch_npu)
-    _ASCENDC_EXTENSION_LIBRARY = _find_ascendc_extension_library()
-    _ASCENDC_EXTENSION_MODULE = importlib.import_module("fla_npu.custom_aclnn_extension_lib")
-    return _ASCENDC_EXTENSION_MODULE
+    return load_ascendc_opapi_libraries()
 
 
 def load_legacy_torch_ops() -> pathlib.Path:
@@ -153,9 +180,11 @@ def load_legacy_torch_ops() -> pathlib.Path:
         return _LEGACY_TORCH_OPS_LIBRARY
 
     import torch
+    import torch_npu
 
-    load_ascendc_extension()
-    legacy_library = _ASCENDC_EXTENSION_LIBRARY or _find_ascendc_extension_library()
+    _prepare_embedded_opp()
+    _preload_torch_npu_dependencies(torch, torch_npu)
+    legacy_library = _find_ascendc_extension_library()
     torch.ops.load_library(str(legacy_library))
     from .ops.ascendc import install_legacy_torch_ops_warning, install_torch_npu_ops_compat
 
@@ -170,4 +199,9 @@ def is_legacy_torch_ops_loaded() -> bool:
     return _LEGACY_TORCH_OPS_LOADED
 
 
-__all__ = ["is_legacy_torch_ops_loaded", "load_ascendc_extension", "load_legacy_torch_ops"]
+__all__ = [
+    "is_legacy_torch_ops_loaded",
+    "load_ascendc_extension",
+    "load_ascendc_opapi_libraries",
+    "load_legacy_torch_ops",
+]

@@ -76,10 +76,13 @@ FLA_NPU_SOC=ascend910b FLA_NPU_INCREMENTAL_BUILD=1 python -m pip wheel --no-buil
 # 编译 GDN 算子 run 包，注意 --soc 需指定为当前机器芯片类型 {ascend910b/ascend910_93/ascend950}
 bash build.sh --soc=ascend910b --pkg --vendor_name=fla_npu
 
-# 单独编译 torch_custom 适配 wheel
+# 单独编译 Python runtime wheel
 cd torch_custom/fla_npu
-bash gen.sh npu_custom.yaml
 python3 setup.py bdist_wheel
+
+# 如需继续验证旧 torch.ops.npu 路径，可显式编译 legacy PyTorch C++ extension
+FLA_NPU_BUILD_LEGACY_EXTENSION=1 bash gen.sh npu_custom.yaml
+FLA_NPU_BUILD_LEGACY_EXTENSION=1 python3 setup.py bdist_wheel
 ```
 
 ### Step 3. 安装
@@ -105,7 +108,7 @@ source ${FLA_NPU_OPP_INSTALL_PATH}/vendors/fla_npu_transformer/bin/set_env.bash
 python -m pip install --force-reinstall --no-deps torch_custom/fla_npu/dist/fla_npu-*.whl
 ```
 
-`import fla_npu` 是轻量导入，不会自动导入 `torch` / `torch_npu`，也不会自动注册 `torch.ops.npu`。只有显式调用 `fla_npu.load_legacy_torch_ops()` 时，才会加载兼容旧 `torch.ops.npu.*` 调用的扩展库，并优先使用 wheel 内嵌 OPP，找不到时继续从 `FLA_NPU_OPP_PATH`、`ASCEND_CUSTOM_OPP_PATH` 和 `ASCEND_OPP_PATH` 查找已安装 OPP。
+`import fla_npu` 是轻量导入，不会自动导入 `torch` / `torch_npu`，也不会自动注册 `torch.ops.npu`。默认 wheel 通过 Python ctypes 直调 aclnn/opapi，推荐使用 `fla_npu.ops.ascendc`；`torch_npu.ops.*` 会在导入 `fla_npu.ops.ascendc` 后挂到同一套 Python wrapper。只有用 `FLA_NPU_BUILD_LEGACY_EXTENSION=1` 额外编出 legacy 扩展时，才可显式调用 `fla_npu.load_legacy_torch_ops()` 兼容旧 `torch.ops.npu.*`。
 
 ### Step 4. 测试安装成功
 
@@ -113,11 +116,11 @@ python -m pip install --force-reinstall --no-deps torch_custom/fla_npu/dist/fla_
 
 ```sh
 python -c "import fla_npu; print(fla_npu.is_legacy_torch_ops_loaded())"
-python -c "import fla_npu; fla_npu.load_legacy_torch_ops(); import torch; print(hasattr(torch.ops.npu, 'npu_chunk_fwd_o'))"
+python -c "from fla_npu.ops import ascendc; import torch_npu; print(hasattr(torch_npu.ops, 'chunk_fwd_o'))"
 python scripts/check_packaged_wheel_api.py
 ```
 
-`torch.ops.npu.*` 是兼容旧代码的过渡用法，调用时会产生 `FutureWarning`，后续版本不再支持。新代码优先使用 `fla_npu.ops.ascendc` 下的稳定 Python 入口。
+`torch.ops.npu.*` 是 legacy extension 的过渡用法，后续版本不再支持。新代码优先使用 `fla_npu.ops.ascendc` 下的稳定 Python 入口。
 
 ### 测试单算子
 

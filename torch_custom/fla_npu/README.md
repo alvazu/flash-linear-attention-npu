@@ -55,7 +55,7 @@ fla_npu/
 └── ...
 ```
 
-使用方式：`pip install fla_npu*.whl` 安装后，先 source 已安装 custom OPP 的 `set_env.bash`，或设置 `FLA_NPU_OPP_PATH` 指向 OPP root / vendor 目录，即可在 Python 中调用本样例接入的自定义算子（如 `torch.ops.npu.npu_fast_gelu_custom`、`torch_npu.ops.fast_gelu_custom` 或 `from fla_npu.ops.ascendc import fast_gelu_custom`）。
+使用方式：`pip install fla_npu*.whl` 安装后，先 source 已安装 custom OPP 的 `set_env.bash`，或设置 `FLA_NPU_OPP_PATH` 指向 OPP root / vendor 目录，即可在 Python 中调用本样例接入的自定义算子（推荐 `from fla_npu.ops.ascendc import fast_gelu_custom`，导入后也会兼容 `torch_npu.ops.fast_gelu_custom`）。
 
 
 ## 一键运行样例
@@ -63,24 +63,21 @@ fla_npu/
 若仅想快速跑通本样例（不修改算子），在 `fla_npu` 目录下**按顺序**执行：
 
 ```bash
-# 1. 先执行 gen.sh，生成适配代码
-bash gen.sh npu_custom.yaml
-
-# 2. 再执行 setup.py 构建 whl 包并安装
+# 1. 执行 setup.py 构建 Python runtime whl 包并安装
 python setup.py bdist_wheel
 cd dist
 pip install fla_npu*.whl --force-reinstall --no-deps
 
-# 3. 运行测试验证
+# 2. 运行测试验证
 cd ..
 cd test && python test_npu_fast_gelu_custom.py
 ```
 
-测试通过即表示样例已跑通，可直接调用 `torch.ops.npu.npu_fast_gelu_custom`、`torch_npu.ops.fast_gelu_custom` 或 `fla_npu.ops.ascendc.fast_gelu_custom` 算子。
+测试通过即表示样例已跑通，可直接调用 `fla_npu.ops.ascendc.fast_gelu_custom` 或 `torch_npu.ops.fast_gelu_custom` 算子。
 
 ---
 
-**改成接入自己的算子时**：只需把 YAML 里的内容换成自己算子的定义（见下方「使用步骤」），然后同样先跑 `gen.sh`（传入你的 YAML 文件名），再跑 `setup.py` 即可。
+**改成接入自己的算子时**：如果只使用 Python ctypes runtime，需要在 `fla_npu.ops.ascendc` 中补充 Python wrapper；如果还要兼容旧 `torch.ops.npu`，再跑 `gen.sh` 并使用 `FLA_NPU_BUILD_LEGACY_EXTENSION=1` 构建 legacy extension。
 
 ## 使用步骤
 
@@ -125,7 +122,7 @@ bash gen.sh npu_custom.yaml
 
 ### 4. 构建 whl 包并运行测试
 
-在步骤 3 完成（gen.sh 已执行）后，再执行 `setup.py` 构建，在 `./dist/`下得到 **`fla_npu*.whl`**：
+执行 `setup.py` 构建，在 `./dist/`下得到 **`fla_npu*.whl`**：
 
 ```bash
 python setup.py bdist_wheel
@@ -133,7 +130,7 @@ cd dist
 pip install fla_npu*.whl
 ```
 
-安装完成后即可在代码中调用接入的自定义算子（如 `torch.ops.npu.npu_fast_gelu_custom`、`torch_npu.ops.fast_gelu_custom` 或 `fla_npu.ops.ascendc.fast_gelu_custom`）。例如用样例自带的测试用例验证：
+安装完成后即可在代码中调用接入的自定义算子（如 `fla_npu.ops.ascendc.fast_gelu_custom` 或 `torch_npu.ops.fast_gelu_custom`）。例如用样例自带的测试用例验证：
 
 ```bash
 cd test
@@ -197,6 +194,6 @@ python test_npu_fast_gelu_custom.py
 
 ## 小结
 
-- **适用**：自定义 aclnn 算子、语义与 ATen 对齐、适配层仅做 output 申请的结构化场景。  
-- **执行流程**：先执行 `gen.sh npu_custom.yaml` 生成适配代码，再执行 `setup.py` 构建得到 `fla_npu*.whl`，`pip install` 后即可调用接入的算子。  
-- **自用**：把 YAML 里的内容换成自己算子的定义，gen.sh 传入对应 YAML 文件名，同样先 gen.sh 再 setup.py 即可。
+- **适用**：自定义 aclnn 算子、语义与 ATen 对齐、适配层仅做 output 申请的结构化场景。
+- **执行流程**：默认执行 `setup.py` 构建 Python runtime wheel；如需旧 `torch.ops.npu` 路径，再执行 `gen.sh npu_custom.yaml` 并设置 `FLA_NPU_BUILD_LEGACY_EXTENSION=1` 构建 legacy extension。
+- **自用**：把 YAML 里的内容换成自己算子的定义后，Python runtime 需要补充对应 ctypes wrapper；legacy extension 继续通过 gen.sh 生成适配代码。

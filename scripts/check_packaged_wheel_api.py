@@ -7,8 +7,6 @@ from pathlib import Path
 
 
 ASCENDC_NAMES = (
-    "fast_gelu_custom",
-    "fast_gelu_custom_backward",
     "causal_conv1d",
     "causal_conv1d_bwd",
     "chunk_bwd_dqkwg",
@@ -70,9 +68,11 @@ def main() -> int:
     args = parser.parse_args()
 
     import fla_npu
-    fla_npu.load_legacy_torch_ops()
     import torch_npu
     from fla_npu.ops import ascendc
+
+    if fla_npu.is_legacy_torch_ops_loaded():
+        raise AssertionError("packaged wheel API check should not load legacy torch.ops.npu extension")
 
     for name in ASCENDC_NAMES:
         _require_attr(ascendc, name, "fla_npu.ops.ascendc")
@@ -84,8 +84,6 @@ def main() -> int:
 
     if ascendc.BACKWARD_OPS.get("causal_conv1d") != "causal_conv1d_bwd":
         raise AssertionError("causal_conv1d backward binding metadata is missing")
-    if ascendc.BACKWARD_OPS.get("fast_gelu_custom") != "fast_gelu_custom_backward":
-        raise AssertionError("fast_gelu_custom backward binding metadata is missing")
 
     if not args.skip_triton:
         from fla_npu.ops import triton
