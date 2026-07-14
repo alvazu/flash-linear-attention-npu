@@ -93,6 +93,9 @@ ge::graphStatus RecurrentGatedDeltaRuleTiling::GetShapeAttrsInfo()
     OP_CHECK_IF(GetScale() != ge::GRAPH_SUCCESS, OP_LOGE(inputParams_.opName, "Invalid GetScale."),
                 return ge::GRAPH_FAILED);
 
+    OP_CHECK_IF(GetStateStrides() != ge::GRAPH_SUCCESS, OP_LOGE(inputParams_.opName, "Invalid GetStateStrides."),
+                return ge::GRAPH_FAILED);
+
     OP_CHECK_IF(GetOptionalInput() != ge::GRAPH_SUCCESS, OP_LOGE(inputParams_.opName, "Invalid GetOptionalInput."),
                 return ge::GRAPH_FAILED);
 
@@ -269,6 +272,21 @@ ge::graphStatus RecurrentGatedDeltaRuleTiling::GetScale()
     float scaleValue = *attrs->GetAttrPointer<float>(0);
     tilingData_.scale = scaleValue;
 
+    return ge::GRAPH_SUCCESS;
+}
+
+ge::graphStatus RecurrentGatedDeltaRuleTiling::GetStateStrides()
+{
+    auto inputStride = context_->GetInputStride(STATE_INDEX);
+    if (inputStride != nullptr && inputStride->GetDimNum() == RGDR_STATE_DIM_NUM) {
+        tilingData_.stateStride0 = inputStride->GetStride(0);
+        tilingData_.stateStride1 = inputStride->GetStride(1);
+        tilingData_.stateStride2 = inputStride->GetStride(2);
+    } else {
+        tilingData_.stateStride2 = tilingData_.dk;
+        tilingData_.stateStride1 = tilingData_.dv * tilingData_.stateStride2;
+        tilingData_.stateStride0 = tilingData_.nv * tilingData_.stateStride1;
+    }
     return ge::GRAPH_SUCCESS;
 }
 

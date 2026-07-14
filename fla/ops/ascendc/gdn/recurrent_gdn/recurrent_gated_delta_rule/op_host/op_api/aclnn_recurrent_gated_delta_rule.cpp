@@ -27,6 +27,7 @@
 #include "aclnn_kernels/transpose.h"
 #include "aclnn_kernels/contiguous.h"
 #include "aclnn_kernels/reshape.h"
+#include "opdev/tensor_view_utils.h"
 
 using namespace op;
 
@@ -172,6 +173,14 @@ aclnnStatus aclnnRecurrentGatedDeltaRuleGetWorkspaceSize(const aclTensor *query,
     }
     if (numAcceptedTokens != nullptr) {
         numAcceptedTokens = l0op::Contiguous(numAcceptedTokens, uniqueExecutor.get());
+    }
+    if (!IsContiguous(stateRef)) {
+        stateRef = uniqueExecutor.get()->CreateView(
+            stateRef,
+            stateRef->GetViewShape(),
+            stateRef->GetStorageShape(),
+            stateRef->GetViewStrides(),
+            stateRef->GetViewOffset());
     }
 
     auto out_ = l0op::Contiguous(out, uniqueExecutor.get());
