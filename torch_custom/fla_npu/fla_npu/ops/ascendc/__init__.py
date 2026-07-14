@@ -1,7 +1,18 @@
+# -----------------------------------------------------------------------------------------------------------
+# Copyright (c) 2026 Tianjin University, Ltd.
+# This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+# CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the License.
+# -----------------------------------------------------------------------------------------------------------
+
 """Ascend C backed FLA NPU operators.
 
-This module provides stable Python import paths and compatibility helpers for
-the legacy PyTorch dispatcher custom operators.
+This module provides stable Python import paths backed by Python ctypes aclnn
+calls.  Compatibility helpers for legacy torch_npu/torch.ops.npu call sites are
+kept opt-in and are not installed during normal import.
 """
 
 from __future__ import annotations
@@ -9,7 +20,9 @@ from __future__ import annotations
 import functools
 import types
 import warnings
-from typing import Callable
+from typing import Callable, Optional
+
+from ._aclnn_ctypes import ASCENDC_CTYPES_OPS
 
 _ASCENDC_OPS = (
     "npu_fast_gelu_custom",
@@ -24,6 +37,7 @@ _ASCENDC_OPS = (
     "npu_chunk_fwd_o",
     "npu_chunk_gated_delta_rule_fwd_h",
     "npu_recompute_w_u_fwd",
+    "npu_chunk_scaled_dot_kkt",
     "npu_solve_tri",
     "npu_chunk_kda_fwd",
     "npu_kda_gate_cumsum",
@@ -42,6 +56,33 @@ _LEGACY_TORCH_OPS_WARNING = (
     "in a future fla_npu release. Use fla_npu.ops.ascendc.{public_name}(...) "
     "or the decoupled Ascend C API instead."
 )
+
+_DIRECT_RUNTIME_READY = False
+_DIRECT_RUNTIME_ERROR: Optional[Exception] = None
+
+
+def _prepare_direct_runtime(*, raise_on_error: bool = True) -> None:
+    """Prepare embedded OPP paths and load custom op_api libraries."""
+
+    global _DIRECT_RUNTIME_ERROR, _DIRECT_RUNTIME_READY
+    if _DIRECT_RUNTIME_READY:
+        return
+
+    try:
+        import fla_npu
+
+        fla_npu.load_ascendc_opapi_libraries()
+    except Exception as exc:
+        _DIRECT_RUNTIME_ERROR = exc
+        if raise_on_error:
+            raise RuntimeError(
+                "Unable to initialize fla_npu Ascend C op_api libraries. "
+                "Please source the CANN set_env.sh before importing "
+                "fla_npu.ops.ascendc or calling Ascend C operators."
+            ) from exc
+    else:
+        _DIRECT_RUNTIME_ERROR = None
+        _DIRECT_RUNTIME_READY = True
 
 
 def _torch_npu_namespace():
@@ -70,6 +111,15 @@ def _get_torch_op(name: str):
             "torch.ops.npu compatibility path."
         )
     return _unwrap_legacy_torch_op(getattr(namespace, name))
+
+
+@functools.lru_cache(maxsize=None)
+def _get_direct_op(name: str):
+    _prepare_direct_runtime()
+    try:
+        return ASCENDC_CTYPES_OPS[name]
+    except KeyError as exc:
+        raise AttributeError(f"fla_npu.ops.ascendc has no ctypes Ascend C op {name}.") from exc
 
 
 def _warn_legacy_torch_op(name: str) -> None:
@@ -130,13 +180,13 @@ class _LegacyTorchOpWarningWrapper:
 
 
 def _make_raw_wrapper(name: str) -> Callable:
-    @functools.wraps(_get_torch_op)
+    @functools.wraps(_get_direct_op)
     def wrapper(*args, **kwargs):
-        return _get_torch_op(name)(*args, **kwargs)
+        return _get_direct_op(name)(*args, **kwargs)
 
     wrapper.__name__ = name
     wrapper.__qualname__ = name
-    wrapper.__doc__ = f"Call torch.ops.npu.{name}."
+    wrapper.__doc__ = f"Call the direct Ascend C binding for {name}."
     return wrapper
 
 
@@ -165,12 +215,12 @@ class _FastGeluCustomFunction:
             @staticmethod
             def forward(ctx, self):
                 ctx.save_for_backward(self)
-                return _get_torch_op("npu_fast_gelu_custom")(self)
+                return _get_direct_op("npu_fast_gelu_custom")(self)
 
             @staticmethod
             def backward(ctx, grad):
                 (self,) = ctx.saved_tensors
-                return _get_torch_op("npu_fast_gelu_custom_backward")(grad, self)
+                return _get_direct_op("npu_fast_gelu_custom_backward")(grad, self)
 
         return Function.apply(input_tensor)
 
@@ -180,7 +230,7 @@ def fast_gelu_custom(input_tensor):
 
     if _has_tensor_requiring_grad(input_tensor):
         return _FastGeluCustomFunction.apply(input_tensor)
-    return _get_torch_op("npu_fast_gelu_custom")(input_tensor)
+    return _get_direct_op("npu_fast_gelu_custom")(input_tensor)
 
 
 def causal_conv1d(
@@ -213,7 +263,7 @@ def causal_conv1d(
         and _has_tensor_requiring_grad(x, weight, bias)
     )
     if not can_bind_backward:
-        return _get_torch_op("npu_causal_conv1d")(
+        return _get_direct_op("npu_causal_conv1d")(
             x=x,
             weight=weight,
             bias=bias,
@@ -233,7 +283,7 @@ def causal_conv1d(
     class Function(torch.autograd.Function):
         @staticmethod
         def forward(ctx, x_, weight_, bias_, conv_states_):
-            y = _get_torch_op("npu_causal_conv1d")(
+            y = _get_direct_op("npu_causal_conv1d")(
                 x=x_,
                 weight=weight_,
                 bias=bias_,
@@ -251,6 +301,7 @@ def causal_conv1d(
             ctx.has_bias = bias_ is not None
             if bias_ is not None:
                 tensors.append(bias_)
+            ctx.activation_mode = activation_mode
             ctx.save_for_backward(*tensors)
             return y
 
@@ -260,7 +311,7 @@ def causal_conv1d(
             x_ = saved.pop(0)
             weight_ = saved.pop(0)
             bias_ = saved.pop(0) if ctx.has_bias else None
-            dx, dw, db, _ = _get_torch_op("npu_causal_conv1d_bwd")(
+            dx, dw, db, _ = _get_direct_op("npu_causal_conv1d_bwd")(
                 x=x_,
                 y=None if ctx.activation_mode == 0 else None,
                 weight=weight_,
@@ -313,6 +364,8 @@ for _name in _ASCENDC_OPS:
 
 globals()["fast_gelu_custom"] = fast_gelu_custom
 globals()["causal_conv1d"] = causal_conv1d
+
+_prepare_direct_runtime(raise_on_error=False)
 
 __all__ = [
     "BACKWARD_OPS",
