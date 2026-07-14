@@ -17,7 +17,7 @@
           <mxGeometry x="680" y="145" width="610" height="730" as="geometry"/>
         </mxCell>
 
-        <mxCell id="old-header" value="&lt;b&gt;旧扩展路径：多层编译 ABI 绑定&lt;/b&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FDECEC;strokeColor=#D85C5C;strokeWidth=2;fontSize=18;fontColor=#7A2929;" vertex="1" parent="1">
+        <mxCell id="old-header" value="&lt;b&gt;旧扩展路径：dispatcher 桥接库形成多层 ABI 绑定&lt;/b&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FDECEC;strokeColor=#D85C5C;strokeWidth=2;fontSize=18;fontColor=#7A2929;" vertex="1" parent="1">
           <mxGeometry x="50" y="90" width="570" height="48" as="geometry"/>
         </mxCell>
         <mxCell id="new-header" value="&lt;b&gt;当前默认路径：Python ctypes + 内嵌 OPP&lt;/b&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#E9F7EE;strokeColor=#4C9B60;strokeWidth=2;fontSize=18;fontColor=#244B2F;" vertex="1" parent="1">
@@ -36,11 +36,14 @@
         <mxCell id="old-cxx" value="&lt;b&gt;gcc / libstdc++ ABI&lt;/b&gt;&lt;br/&gt;_GLIBCXX_USE_CXX11_ABI" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FFF1F1;strokeColor=#D85C5C;strokeWidth=2;fontSize=15;fontColor=#172033;spacing=7;" vertex="1" parent="1">
           <mxGeometry x="60" y="555" width="230" height="85" as="geometry"/>
         </mxCell>
-        <mxCell id="old-extension" value="&lt;b&gt;custom_aclnn_extension_lib*.so&lt;/b&gt;&lt;br/&gt;wheel 内 host ELF 扩展&lt;br/&gt;&lt;br/&gt;编译、链接或注册时&lt;br/&gt;绑定左侧四层 ABI" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FFE6E6;strokeColor=#C94040;strokeWidth=2.5;fontSize=15;fontColor=#172033;spacing=8;" vertex="1" parent="1">
-          <mxGeometry x="370" y="305" width="230" height="210" as="geometry"/>
+        <mxCell id="old-extension" value="&lt;b&gt;旧 PyTorch dispatcher 桥接库&lt;/b&gt;&lt;br/&gt;&lt;b&gt;custom_aclnn_extension_lib*.so&lt;/b&gt;&lt;br/&gt;&lt;br/&gt;编译 op-plugin / ATen 适配代码&lt;br/&gt;注册 torch.ops.npu.*&lt;br/&gt;接收 Tensor / 属性&lt;br/&gt;转入自定义 aclnn 调用" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FFE6E6;strokeColor=#C94040;strokeWidth=2.5;fontSize=14;fontColor=#172033;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="350" y="285" width="250" height="230" as="geometry"/>
         </mxCell>
-        <mxCell id="old-result" value="&lt;b&gt;结果：包矩阵膨胀&lt;/b&gt;&lt;br/&gt;torch × torch_npu × Python × C++ ABI × host 架构&lt;br/&gt;任一 ABI 变化都可能要求重新编译 wheel" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FFF1F1;strokeColor=#D85C5C;strokeWidth=2.5;fontSize=16;fontColor=#7A2929;spacing=8;" vertex="1" parent="1">
-          <mxGeometry x="60" y="710" width="540" height="115" as="geometry"/>
+        <mxCell id="old-dependency-note" value="&lt;b&gt;ABI 汇合点，不是依赖集合包&lt;/b&gt;&lt;br/&gt;libtorch / libtorch_npu 通常由运行环境动态提供&lt;br/&gt;ELF 记录 DT_NEEDED、外部符号和编译时 ABI 假设" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FFF7E8;strokeColor=#D9970B;strokeWidth=2;fontSize=13;fontColor=#5E4200;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="330" y="550" width="280" height="130" as="geometry"/>
+        </mxCell>
+        <mxCell id="old-result" value="&lt;b&gt;结果：桥接 wheel 的包矩阵膨胀&lt;/b&gt;&lt;br/&gt;torch × torch_npu × Python × C++ ABI × host 架构&lt;br/&gt;任一 ABI 变化都可能要求重新编译 wheel" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FFF1F1;strokeColor=#D85C5C;strokeWidth=2.5;fontSize=16;fontColor=#7A2929;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="60" y="720" width="540" height="115" as="geometry"/>
         </mxCell>
 
         <mxCell id="new-python" value="&lt;b&gt;纯 Python 包&lt;/b&gt;&lt;br/&gt;py3-none-any wheel&lt;br/&gt;无 CPython 扩展 ABI" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#F2FAF4;strokeColor=#4C9B60;strokeWidth=2;fontSize=15;fontColor=#172033;spacing=7;" vertex="1" parent="1">
@@ -74,10 +77,11 @@
         <mxCell id="old-e4" value="" style="edgeStyle=none;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=2.3;strokeColor=#C94040;exitX=1;exitY=0.5;entryX=0;entryY=0.85;" edge="1" parent="1" source="old-cxx" target="old-extension">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="old-e5" value="形成版本组合" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=2.5;strokeColor=#C94040;fontSize=13;fontColor=#7A2929;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;entryX=0.8;entryY=0;" edge="1" parent="1" source="old-extension" target="old-result">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points"><mxPoint x="485" y="680"/><mxPoint x="492" y="680"/></Array>
-          </mxGeometry>
+        <mxCell id="old-e-bridge-note" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=2.3;strokeColor=#D9970B;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="old-extension" target="old-dependency-note">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="old-e5" value="形成版本组合" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=2.5;strokeColor=#C94040;fontSize=13;fontColor=#7A2929;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;entryX=0.76;entryY=0;" edge="1" parent="1" source="old-dependency-note" target="old-result">
+          <mxGeometry relative="1" as="geometry"/>
         </mxCell>
 
         <mxCell id="new-e1" value="Python 调用" style="edgeStyle=none;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=2.4;strokeColor=#2F7D43;fontSize=13;fontColor=#244B2F;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;entryX=0.28;entryY=0;" edge="1" parent="1" source="new-python" target="new-ctypes">

@@ -22,7 +22,7 @@ SVG 见 [`../assets/fla-npu-version-dependency.svg`](../assets/fla-npu-version-d
 
 ## 版本依赖基础课
 
-很多自定义算子仓库出现“只能在某个 torch、torch_npu、Python 或 gcc 组合里安装”的问题，本质上是把宿主框架的二进制 ABI 编进了 wheel。只要 wheel 内出现 Python C extension、PyTorch C++ extension 或 torch_npu dispatcher 注册库，就会把构建时环境的一部分冻结到产物里。
+很多自定义算子仓库出现“只能在某个 torch、torch_npu、Python 或 gcc 组合里安装”的问题，并不是 wheel 把整个宿主框架复制了进去，而是 wheel 中包含了针对构建环境 ABI 编译的桥接扩展。扩展机器码会固化编译时使用的类型布局、C++ 符号、dispatcher schema、动态库依赖和编译器 ABI 约定；加载时，目标环境必须提供与这些约定兼容的实现。
 
 ![版本依赖来源和解耦边界](../assets/fla-npu-version-dependency.svg)
 
@@ -30,24 +30,51 @@ SVG 见 [`../assets/fla-npu-version-dependency.svg`](../assets/fla-npu-version-d
 
 | 依赖来源 | 典型触发条件 | 结果 |
 | --- | --- | --- |
-| CPython ABI | wheel 内包含 `.so` Python extension，文件名或 wheel tag 带 `cp39`、`cp310`、`cp311`、`cp312` | 一个 Python minor 版本编出的包不能天然跨另一个 Python minor 使用 |
+| CPython ABI | 使用 `CppExtension` / `BuildExtension` 生成 Python extension，文件名或 wheel tag 带 `cp39`、`cp310`、`cp311`、`cp312` | 构建产物和安装标签通常绑定 Python minor 版本；即使运行时通过 `torch.ops.load_library()` 加载，也不能默认视为跨 Python ABI 通用 |
 | PyTorch C++ ABI | 使用 `torch.utils.cpp_extension.CppExtension`，include/link `libtorch`、ATen、c10 | 绑定构建时 torch minor/patch 的 C++ ABI 和 dispatcher 细节 |
 | torch_npu ABI | include/link `libtorch_npu.so`，注册 `torch.ops.npu.*`，依赖 torch_npu op-plugin 生成代码 | 绑定构建时 torch_npu 版本、修复补丁和算子注册机制 |
 | C++ 标准库 ABI | C++ extension 编译时受 `_GLIBCXX_USE_CXX11_ABI`、gcc/libstdc++ 影响 | wheel 名或运行时需要区分 `cxx11abi`，跨编译器组合容易加载失败 |
-| 平台二进制 ABI | wheel 内有面向 host 的 ELF 扩展，例如 `linux_aarch64` 或 `linux_x86_64` | 同一个 wheel 不能标成 `py3-none-any`，需要按架构构建 |
+| 平台二进制 ABI | wheel 内有面向 host 的 ELF，例如 x86_64 或 aarch64 的 Python extension、op_api 动态库 | 即使文件名使用 `py3-none-any`，实际二进制仍必须按 host 架构构建和管理，不能跨架构混用 |
 | CANN/ACL/OPP ABI | 算子二进制、`libcust_opapi.so`、op_host/tiling/kernel 依赖 CANN runtime 和 SOC | 这是 Ascend C 算子的真实运行依赖，不能也不应该伪装成无依赖 |
 
 本仓的解耦设计解决的是前五类里由默认 Python 交付路径引入的绑定。也就是说，默认 `fla_npu.ops.ascendc` 不把 CPython extension、PyTorch C++ extension、torch_npu dispatcher 或 C++ ABI 放进调用链。剩下的 CANN/ACL/OPP/SOC 依赖是硬件运行时依赖，仍然需要通过 CANN 环境、SOC 对应 wheel 和 OPP ABI 兼容性管理。
+
+### `custom_aclnn_extension_lib*.so` 的作用
+
+`custom_aclnn_extension_lib*.so` 是旧路径的 **PyTorch dispatcher 桥接库**，不是 Ascend C kernel，也不是提供自定义 `aclnn*` 符号的 `libcust_opapi.so`。仓库通过 `torch.utils.cpp_extension.CppExtension` 将 `torch_npu/csrc/aten` 和 `op_plugin` 中的生成代码、注册代码和参数适配代码编译成这个 host ELF。
+
+它在旧调用链中承担四项职责：
+
+1. 把 op-plugin / ATen 生成的 schema、dispatcher 注册和参数适配代码编译成可加载模块。
+2. 被 `torch.ops.load_library()` 加载后，向 PyTorch dispatcher 注册 `torch.ops.npu.<op>`。
+3. 接收 dispatcher 传入的 torch tensor、标量和可选属性，按生成代码完成参数适配。
+4. 从 PyTorch 调用层进入自定义 `aclnn` host 发射链路；真正的 `aclnn*GetWorkspaceSize` / `aclnn*` 实现仍由 OPP 中的 `libcust_opapi.so` 提供，kernel 则位于 OPP 的 SOC 二进制目录。
+
+因此，这个 `.so` 是多层 ABI 的**汇合点**，但不是把所有依赖静态装在一起的“依赖集合包”：
+
+- op-plugin / ATen 生成的桥接和注册机器码会进入该 `.so`。
+- 编译时使用的 C++ 类型布局、符号修饰、dispatcher schema 和 `_GLIBCXX_USE_CXX11_ABI` 等假设会固化在 ELF 中。
+- `libtorch.so`、`libc10.so`、`libtorch_npu.so` 通常由目标环境动态提供；ELF 主要通过 `DT_NEEDED`、未解析外部符号和 RPATH 等信息声明如何寻找它们。
+- `CppExtension` 产物命名和 wheel 标签通常还会携带 CPython minor 与 host 架构信息。
+
+加载时只要其中一层不兼容，就可能出现 wheel tag 不匹配、`undefined symbol`、`GLIBCXX_* not found`、dispatcher schema 注册失败或旧 `torch.ops.npu.*` 不可用。图中从四类 ABI 指向该 `.so` 的箭头表示“编译、链接和注册约定在这里汇合”，并不表示四套动态库都被复制进该文件。
+
+两个容易混淆的动态库边界如下：
+
+| 动态库 | 所属层 | 主要职责 | 默认 ctypes 路径是否需要 |
+| --- | --- | --- | --- |
+| `custom_aclnn_extension_lib*.so` | PyTorch / torch_npu 兼容层 | 注册 `torch.ops.npu.*`、承接 dispatcher 调用、把 torch 参数转入自定义 `aclnn` 调用链 | 否，仅 `FLA_NPU_BUILD_LEGACY_EXTENSION=1` 构建且显式 `load_legacy_torch_ops()` 时使用 |
+| `libcust_opapi.so` | CANN 自定义 OPP op_api 层 | 提供 `aclnn*GetWorkspaceSize` / `aclnn*`，创建 executor 并发射自定义算子 | 是，默认 `fla_npu.ops.ascendc` 由 Python `ctypes` 直接加载 |
 
 ## 本设计如何消除版本绑定
 
 旧方案通常是：
 
 1. 用 `torchnpugen` 和 `torch_npu` op-plugin 生成 C++ 注册代码。
-2. 用 `CppExtension` 编译 `custom_aclnn_extension_lib*.so`。
-3. extension 链接 `libtorch`、`libc10`、`libtorch_npu`。
-4. import 后通过 `torch.ops.load_library()` 注册 `torch.ops.npu.<op>`。
-5. 用户调用 `torch.ops.npu.<op>`，再进入 `aclnn*`。
+2. 用 `CppExtension` 把生成代码编译成 dispatcher 桥接库 `custom_aclnn_extension_lib*.so`。
+3. 桥接库链接 `libtorch`、`libc10`、`libtorch_npu`，并记录对当前框架 ABI 的符号和类型假设。
+4. 显式调用 `fla_npu.load_legacy_torch_ops()`，内部通过 `torch.ops.load_library()` 加载桥接库并注册 `torch.ops.npu.<op>`。
+5. 用户调用 `torch.ops.npu.<op>`，由桥接库完成 dispatcher 参数适配，再进入 `libcust_opapi.so` 提供的自定义 `aclnn*`。
 
 这条链路的 wheel 必然知道构建时的 Python ABI、torch ABI、torch_npu ABI、gcc/libstdc++ ABI 和 host 架构，因此经常出现“同一个源码要为多个 torch/Python 组合分别编 wheel”的问题。
 

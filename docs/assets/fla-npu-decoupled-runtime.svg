@@ -54,7 +54,7 @@
 
   <path class="edge-side" d="M970 325 H870" stroke="#8266B5" marker-end="url(#arrow-purple)"/>
   <path class="edge-side" d="M970 615 H870" stroke="#8266B5" marker-end="url(#arrow-purple)"/>
-  <path class="edge-side" d="M970 768 H870" stroke="#D85C5C" stroke-dasharray="7 5" marker-end="url(#arrow-red)"/>
+  <path class="edge-side" d="M970 782.5 H870" stroke="#D85C5C" stroke-dasharray="7 5" marker-end="url(#arrow-red)"/>
 
   <!-- Delivery nodes -->
   <rect class="box" x="50" y="155" width="260" height="100" fill="#F4F8FF" stroke="#5B7DB1"/>
@@ -124,12 +124,14 @@
     <tspan class="node-text" x="1115" y="631">dtype / format / data ptr</tspan>
     <tspan class="node-text" x="1115" y="656">NZ 等私有格式不做隐式转换</tspan>
   </text>
-  <rect class="box" x="970" y="710" width="290" height="115" fill="#FFF4F4" stroke="#D85C5C"/>
+  <rect class="box" x="970" y="700" width="290" height="165" fill="#FFF4F4" stroke="#D85C5C"/>
   <text text-anchor="middle" x="1115">
-    <tspan class="node-title" x="1115" y="738">可选旧兼容路径</tspan>
-    <tspan class="node-text" x="1115" y="764">fla_npu.load_legacy_torch_ops()</tspan>
-    <tspan class="node-text" x="1115" y="789">torch.ops.npu.*</tspan>
-    <tspan class="node-text" x="1115" y="814">显式启用后才依赖 dispatcher ABI</tspan>
+    <tspan class="node-title" x="1115" y="728">可选旧 dispatcher 兼容路径</tspan>
+    <tspan class="node-text" x="1115" y="754">fla_npu.load_legacy_torch_ops()</tspan>
+    <tspan class="node-text" x="1115" y="780">加载 custom_aclnn_extension_lib*.so</tspan>
+    <tspan class="node-text" x="1115" y="806">注册 torch.ops.npu.*</tspan>
+    <tspan class="node-text" x="1115" y="832">桥接 torch 参数到自定义 aclnn</tspan>
+    <tspan class="node-text" x="1115" y="856">显式启用后才绑定框架 ABI</tspan>
   </text>
 
   <!-- Edge labels sit in gaps, never on top of nodes. -->
@@ -143,5 +145,5 @@
   <g><rect x="583" y="947" width="114" height="20" fill="#fff"/><text class="edge-label" x="640" y="962" text-anchor="middle" fill="#49366B">入队到当前 stream</text></g>
   <g><rect x="883" y="301" width="76" height="20" fill="#fff"/><text class="edge-label" x="921" y="316" text-anchor="middle" fill="#49366B">正向 / 反向</text></g>
   <g><rect x="891" y="591" width="68" height="20" fill="#fff"/><text class="edge-label" x="925" y="606" text-anchor="middle" fill="#49366B">描述符字段</text></g>
-  <g><rect x="892" y="744" width="67" height="20" fill="#fff"/><text class="edge-label" x="925" y="759" text-anchor="middle" fill="#9B3434">显式启用</text></g>
+  <g><rect x="878" y="755" width="82" height="20" fill="#fff"/><text class="edge-label" x="919" y="770" text-anchor="middle" fill="#9B3434">桥接调用 aclnn</text></g>
 </svg>

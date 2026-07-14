@@ -55,8 +55,8 @@
         <mxCell id="format" value="&lt;b&gt;ACL tensor metadata 透传&lt;/b&gt;&lt;br/&gt;shape / stride / storage offset&lt;br/&gt;dtype / format / data ptr&lt;br/&gt;NZ 等私有格式不做隐式转换" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#F7F3FF;strokeColor=#8266B5;strokeWidth=2;fontSize=15;fontColor=#172033;spacing=8;" vertex="1" parent="1">
           <mxGeometry x="970" y="550" width="290" height="130" as="geometry"/>
         </mxCell>
-        <mxCell id="legacy" value="&lt;b&gt;可选旧兼容路径&lt;/b&gt;&lt;br/&gt;fla_npu.load_legacy_torch_ops()&lt;br/&gt;torch.ops.npu.*&lt;br/&gt;显式启用后才依赖 dispatcher ABI" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FFF4F4;strokeColor=#D85C5C;strokeWidth=2;fontSize=15;fontColor=#172033;spacing=8;" vertex="1" parent="1">
-          <mxGeometry x="970" y="710" width="290" height="115" as="geometry"/>
+        <mxCell id="legacy" value="&lt;b&gt;可选旧 dispatcher 兼容路径&lt;/b&gt;&lt;br/&gt;fla_npu.load_legacy_torch_ops()&lt;br/&gt;加载 custom_aclnn_extension_lib*.so&lt;br/&gt;注册 torch.ops.npu.*&lt;br/&gt;桥接 torch 参数到自定义 aclnn&lt;br/&gt;显式启用后才绑定框架 ABI" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FFF4F4;strokeColor=#D85C5C;strokeWidth=2;fontSize=13;fontColor=#172033;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="970" y="700" width="290" height="165" as="geometry"/>
         </mxCell>
 
         <mxCell id="e-wheel-opp" value="安装" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=2;strokeColor=#5B7DB1;fontSize=13;fontColor=#223A5E;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="wheel" target="opp">
@@ -96,7 +96,7 @@
         <mxCell id="e-format" value="描述符字段" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=2;strokeColor=#8266B5;fontSize=13;fontColor=#49366B;labelBackgroundColor=#FFFFFF;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="format" target="runtime">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e-legacy" value="仅显式启用" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;dashPattern=6 4;endArrow=block;endFill=1;strokeWidth=2;strokeColor=#D85C5C;fontSize=13;fontColor=#9B3434;labelBackgroundColor=#FFFFFF;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="legacy" target="opapi">
+        <mxCell id="e-legacy" value="桥接调用 aclnn" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;dashPattern=6 4;endArrow=block;endFill=1;strokeWidth=2;strokeColor=#D85C5C;fontSize=13;fontColor=#9B3434;labelBackgroundColor=#FFFFFF;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="legacy" target="opapi">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
       </root>
