@@ -31,6 +31,8 @@ from fla_npu.ops.ascendc import (
     chunk_fwd_o as ascendc_chunk_fwd_o,
     chunk_gated_delta_rule_bwd_dhu as ascendc_chunk_gated_delta_rule_bwd_dhu,
     chunk_gated_delta_rule_fwd_h as ascendc_chunk_gated_delta_rule_fwd_h,
+    chunk_local_cumsum as ascendc_chunk_local_cumsum,
+    chunk_scaled_dot_kkt as ascendc_chunk_scaled_dot_kkt,
     prepare_wy_repr_bwd_da as ascendc_prepare_wy_repr_bwd_da,
     prepare_wy_repr_bwd_full as ascendc_prepare_wy_repr_bwd_full,
     recompute_w_u_fwd as ascendc_recompute_w_u_fwd,
@@ -39,7 +41,6 @@ from fla_npu.ops.ascendc import (
 from fla_npu.ops.triton import (
     autocast_custom_bwd,
     autocast_custom_fwd,
-    chunk_local_cumsum,
     input_guard,
     l2norm_bwd,
     l2norm_fwd,
@@ -458,7 +459,7 @@ def _as_chunk_list_dict(
 
 
 def _cumsum_block_t(g: torch.Tensor, chunk_size: int) -> int:
-    # Keep this aligned with fla_npu.ops.triton.chunk_local_cumsum_scalar.
+    # Keep this aligned with the AscendC chunk_local_cumsum chunk index contract.
     return int(chunk_size)
 
 
@@ -566,7 +567,7 @@ def flash_chunk_gated_delta_rule_fwd(
         if scaled_dot_chunk_indices is None:
             scaled_dot_chunk_indices = _as_int_list(_chunk_tensor(chunk_indices, chunk_size))
 
-    g_bht = torch.ops.npu.npu_chunk_local_cumsum(
+    g_bht = ascendc_chunk_local_cumsum(
         g.transpose(1, 2).contiguous().float(),
         chunk_size=chunk_size,
         cu_seqlens=cu_seqlens,
@@ -576,7 +577,7 @@ def flash_chunk_gated_delta_rule_fwd(
     )
     beta_bht = beta.transpose(1, 2).contiguous().float()
 
-    A = torch.ops.npu.npu_chunk_scaled_dot_kkt(
+    A = ascendc_chunk_scaled_dot_kkt(
         k,
         g_bht,
         beta_bht,
@@ -782,14 +783,15 @@ def flash_chunk_gated_delta_rule_bwd(
     if dg.dtype != torch.float32:
         raise ValueError(f"dg current type is {dg.dtype}, should be float32")
 
-    dg = chunk_local_cumsum(
-        dg,
+    dg = ascendc_chunk_local_cumsum(
+        dg.transpose(1, 2).contiguous(),
         chunk_size=chunk_size,
         reverse=True,
         cu_seqlens=cu_seqlens,
-        chunk_indices_out=chunk_indices,
-        head_first=False,
-    )
+        chunk_indices_out=_chunk_tensor(chunk_indices, _cumsum_block_t(dg, chunk_size)),
+        head_first=True,
+        output_dtype="float32",
+    ).transpose(1, 2).contiguous()
 
     return dq, dk, dv, db, dg, dh0
 
