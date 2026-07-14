@@ -348,6 +348,8 @@ at::Tensor npu_chunk_scaled_dot_kkt(
     const at::Tensor &k,
     const at::Tensor &g,
     const at::Tensor &beta,
+    at::OptionalIntArrayRef cu_seqlens,
+    at::OptionalIntArrayRef chunk_indices,
     int64_t chunk_size)
 {
     TORCH_CHECK(k.dim() == 4, "npu_chunk_scaled_dot_kkt: k must be [B,H,T,K], got ", k.sizes());
@@ -363,6 +365,18 @@ at::Tensor npu_chunk_scaled_dot_kkt(
     TORCH_CHECK(
         chunk_size == 16 || chunk_size == 32 || chunk_size == 64 || chunk_size == 128,
         "npu_chunk_scaled_dot_kkt: chunk_size must be one of 16, 32, 64, 128, got ", chunk_size);
+    TORCH_CHECK(
+        cu_seqlens.has_value() == chunk_indices.has_value(),
+        "npu_chunk_scaled_dot_kkt: cu_seqlens and chunk_indices must be both provided or both omitted.");
+    if (cu_seqlens.has_value()) {
+        const auto cu = cu_seqlens.value();
+        const auto chunks = chunk_indices.value();
+        TORCH_CHECK(cu.size() >= 2,
+            "npu_chunk_scaled_dot_kkt: cu_seqlens must have at least 2 elements, got ", cu.size());
+        TORCH_CHECK(chunks.size() > 0 && chunks.size() % 2 == 0,
+            "npu_chunk_scaled_dot_kkt: chunk_indices must be a non-empty flat [seq, chunk] list, got ",
+            chunks.size(), " elements.");
+    }
 
     const int64_t B = k.size(0);
     const int64_t H = k.size(1);
@@ -381,7 +395,7 @@ at::Tensor npu_chunk_scaled_dot_kkt(
 
     EXEC_NPU_CMD_EXT(
         aclnnChunkScaledDotKkt,
-        k_contig, g_contig, beta_contig, chunk_size,
+        k_contig, g_contig, beta_contig, cu_seqlens, chunk_indices, chunk_size,
         A
     );
     return A;

@@ -40,7 +40,6 @@ from fla_npu.ops.triton import (
     autocast_custom_bwd,
     autocast_custom_fwd,
     chunk_local_cumsum,
-    chunk_scaled_dot_kkt_fwd,
     input_guard,
     l2norm_bwd,
     l2norm_fwd,
@@ -559,24 +558,32 @@ def flash_chunk_gated_delta_rule_fwd(
     chunk_indices_list: Optional[Dict[str, Optional[list[int]]]] = None,
     chunk_size: int = 64,
 ):
-    g = chunk_local_cumsum(
-        g,
-        chunk_size=chunk_size,
-        cu_seqlens=cu_seqlens,
-        chunk_indices_out=chunk_indices,
-        head_first=False,
-    )
+    scaled_dot_cu_seqlens = None
+    scaled_dot_chunk_indices = None
+    if cu_seqlens is not None:
+        scaled_dot_cu_seqlens = _as_int_list(cu_seqlens_list) or _as_int_list(cu_seqlens)
+        scaled_dot_chunk_indices = _chunk_list(chunk_indices_list, chunk_size)
+        if scaled_dot_chunk_indices is None:
+            scaled_dot_chunk_indices = _as_int_list(_chunk_tensor(chunk_indices, chunk_size))
 
-    # A is the WY lower-triangular representation before inversion.
-    A = chunk_scaled_dot_kkt_fwd(
-        k=k,
-        g=g,
-        beta=beta,
-        cu_seqlens=cu_seqlens,
-        chunk_indices=_chunk_tensor(chunk_indices, chunk_size),
+    g_bht = torch.ops.npu.npu_chunk_local_cumsum(
+        g.transpose(1, 2).contiguous().float(),
         chunk_size=chunk_size,
-        output_dtype=torch.float32,
+        cu_seqlens=cu_seqlens,
+        chunk_indices_out=_chunk_tensor(chunk_indices, _cumsum_block_t(g, chunk_size)),
+        head_first=True,
+        output_dtype="float32",
     )
+    beta_bht = beta.transpose(1, 2).contiguous().float()
+
+    A = torch.ops.npu.npu_chunk_scaled_dot_kkt(
+        k,
+        g_bht,
+        beta_bht,
+        cu_seqlens=scaled_dot_cu_seqlens,
+        chunk_indices=scaled_dot_chunk_indices,
+        chunk_size=chunk_size,
+    ).transpose(1, 2).contiguous()
 
     A = solve_tri_auto(
         A,
@@ -587,8 +594,8 @@ def flash_chunk_gated_delta_rule_fwd(
         output_dtype=k.dtype,
     )
 
-    g = g.transpose(1, 2).contiguous()
-    beta = beta.transpose(1, 2).contiguous().float()
+    g = g_bht
+    beta = beta_bht
     A = A.transpose(1, 2).contiguous()
 
     w, u = recompute_w_u(

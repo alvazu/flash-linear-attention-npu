@@ -1,6 +1,6 @@
 # ChunkScaledDotKkt 算子说明
 
-`ChunkScaledDotKkt` 用于 Gated Delta Rule 线性注意力中的 chunk-wise WY 表示构建。当前实现覆盖 `gk is None` 的定长序列场景，输入和输出均采用 head-first 排布。
+`ChunkScaledDotKkt` 用于 Gated Delta Rule 线性注意力中的 chunk-wise WY 表示构建。当前实现覆盖 `gk is None` 的定长和变长序列场景，输入和输出均采用 head-first 排布。
 
 ## 1. 产品支持情况
 
@@ -32,6 +32,8 @@ aclnnStatus aclnnChunkScaledDotKktGetWorkspaceSize(
     const aclTensor *k,
     const aclTensor *g,
     const aclTensor *beta,
+    const aclIntArray *cuSeqlensOptional,
+    const aclIntArray *chunkIndicesOptional,
     int64_t chunkSize,
     aclTensor *A,
     uint64_t *workspaceSize,
@@ -51,6 +53,8 @@ torch.ops.npu.npu_chunk_scaled_dot_kkt(
     k: Tensor,
     g: Tensor,
     beta: Tensor,
+    cu_seqlens: list[int] | None = None,
+    chunk_indices: list[int] | None = None,
     chunk_size: int = 64,
 ) -> Tensor
 ```
@@ -62,6 +66,8 @@ torch.ops.npu.npu_chunk_scaled_dot_kkt(
 | k | FLOAT16/BF16 | `[B,H,T,K]` | 是 | key 张量，head-first 排布 |
 | g | FLOAT | `[B,H,T]` | 是 | chunk 内 cumulative gate，head-first 排布 |
 | beta | FLOAT | `[B,H,T]` | 是 | 每个 token/head 的缩放系数，head-first 排布 |
+| cu_seqlens | INT64 | `[N+1]` | 否 | 变长序列累计长度；定长时不传 |
+| chunk_indices | INT64 | `[2*num_chunks]` 或 `[num_chunks,2]` | 否 | 变长 chunk 元数据，按 `[seq_id, chunk_id]` 成对存放 |
 | chunk_size | INT | - | 否 | chunk 大小，默认 64 |
 
 ## 5. 输出参数
@@ -75,8 +81,10 @@ torch.ops.npu.npu_chunk_scaled_dot_kkt(
 1. `k` 必须为 4D，shape 为 `[B,H,T,K]`。
 2. `g` 和 `beta` 必须为 3D，shape 为 `[B,H,T]`。
 3. `chunk_size` 仅支持 `16`、`32`、`64`、`128`。
-4. 当前版本仅支持定长 dense 序列，不支持 `cu_seqlens`、`chunk_indices` 或 `gk` 分支。
-5. 输入建议传入 contiguous Tensor；PyTorch wrapper 会在调用 ACLNN 前执行 contiguous。
+4. `cu_seqlens` 和 `chunk_indices` 必须同时传入或同时省略；省略时走定长 dense 序列。
+5. `chunk_indices` 表示 `[seq_id, chunk_id]`，`chunk_id` 从 0 开始。
+6. 当前版本不支持 `gk` 分支。
+7. 输入建议传入 contiguous Tensor；PyTorch wrapper 会在调用 ACLNN 前执行 contiguous。
 
 ## 7. 目录结构
 

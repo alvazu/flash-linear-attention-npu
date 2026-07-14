@@ -15,6 +15,11 @@ constexpr uint64_t kDefaultLibApiWorkspace = 32ULL * 1024ULL * 1024ULL;
 constexpr uint64_t kFp32BlockElems = 8;
 constexpr uint64_t kWorkspaceAlign = 512;
 constexpr uint64_t kMaxInt32 = static_cast<uint64_t>(std::numeric_limits<int32_t>::max());
+constexpr uint32_t kInputKIndex = 0;
+constexpr uint32_t kInputGIndex = 1;
+constexpr uint32_t kInputBetaIndex = 2;
+constexpr uint32_t kInputCuSeqlensIndex = 3;
+constexpr uint32_t kInputChunkIndicesIndex = 4;
 
 uint64_t CeilDiv(uint64_t a, uint64_t b)
 {
@@ -63,6 +68,26 @@ uint64_t TilingKey(ge::DataType dtype, uint64_t chunkSize)
 bool Shape3Equal(const gert::Shape &shape, int64_t b, int64_t h, int64_t t)
 {
     return shape.GetDimNum() == 3 && shape.GetDim(0) == b && shape.GetDim(1) == h && shape.GetDim(2) == t;
+}
+
+bool GetChunkPairCount(const gert::Shape &shape, uint64_t *pairCount)
+{
+    if (pairCount == nullptr) {
+        return false;
+    }
+    if (shape.GetDimNum() == 1) {
+        const int64_t elems = shape.GetDim(0);
+        if (elems <= 0 || (elems % 2) != 0) {
+            return false;
+        }
+        *pairCount = static_cast<uint64_t>(elems / 2);
+        return true;
+    }
+    if (shape.GetDimNum() == 2 && shape.GetDim(0) > 0 && shape.GetDim(1) == 2) {
+        *pairCount = static_cast<uint64_t>(shape.GetDim(0));
+        return true;
+    }
+    return false;
 }
 
 bool MulOverflow(uint64_t a, uint64_t b, uint64_t *out)
@@ -116,16 +141,17 @@ ge::graphStatus BuildCubeTiling(uint64_t bt, uint64_t k, ge::DataType kDtype, Ch
 
 ge::graphStatus TilingFunc(gert::TilingContext *context)
 {
-    if (context == nullptr || context->GetInputShape(0) == nullptr || context->GetInputShape(1) == nullptr ||
-        context->GetInputShape(2) == nullptr || context->GetInputDesc(0) == nullptr ||
-        context->GetInputDesc(1) == nullptr || context->GetInputDesc(2) == nullptr ||
+    if (context == nullptr || context->GetInputShape(kInputKIndex) == nullptr ||
+        context->GetInputShape(kInputGIndex) == nullptr || context->GetInputShape(kInputBetaIndex) == nullptr ||
+        context->GetInputDesc(kInputKIndex) == nullptr || context->GetInputDesc(kInputGIndex) == nullptr ||
+        context->GetInputDesc(kInputBetaIndex) == nullptr ||
         context->GetRawTilingData() == nullptr) {
         return ge::GRAPH_FAILED;
     }
 
-    const gert::Shape &kShape = context->GetInputShape(0)->GetStorageShape();
-    const gert::Shape &gShape = context->GetInputShape(1)->GetStorageShape();
-    const gert::Shape &betaShape = context->GetInputShape(2)->GetStorageShape();
+    const gert::Shape &kShape = context->GetInputShape(kInputKIndex)->GetStorageShape();
+    const gert::Shape &gShape = context->GetInputShape(kInputGIndex)->GetStorageShape();
+    const gert::Shape &betaShape = context->GetInputShape(kInputBetaIndex)->GetStorageShape();
     if (kShape.GetDimNum() != 4) {
         return ge::GRAPH_FAILED;
     }
@@ -139,9 +165,10 @@ ge::graphStatus TilingFunc(gert::TilingContext *context)
         return ge::GRAPH_FAILED;
     }
 
-    const ge::DataType kDtype = context->GetInputDesc(0)->GetDataType();
-    if ((kDtype != ge::DT_FLOAT16 && kDtype != ge::DT_BF16) || context->GetInputDesc(1)->GetDataType() != ge::DT_FLOAT ||
-        context->GetInputDesc(2)->GetDataType() != ge::DT_FLOAT) {
+    const ge::DataType kDtype = context->GetInputDesc(kInputKIndex)->GetDataType();
+    if ((kDtype != ge::DT_FLOAT16 && kDtype != ge::DT_BF16) ||
+        context->GetInputDesc(kInputGIndex)->GetDataType() != ge::DT_FLOAT ||
+        context->GetInputDesc(kInputBetaIndex)->GetDataType() != ge::DT_FLOAT) {
         return ge::GRAPH_FAILED;
     }
 
@@ -162,7 +189,30 @@ ge::graphStatus TilingFunc(gert::TilingContext *context)
         return ge::GRAPH_FAILED;
     }
 
-    const uint64_t nt = CeilDiv(t, bt);
+    uint64_t nt = CeilDiv(t, bt);
+    uint64_t isVarlen = 0;
+    const auto *cuSeqlensDesc = context->GetOptionalInputDesc(kInputCuSeqlensIndex);
+    const auto *chunkIndicesDesc = context->GetOptionalInputDesc(kInputChunkIndicesIndex);
+    const auto *cuSeqlensShapePtr = context->GetOptionalInputShape(kInputCuSeqlensIndex);
+    const auto *chunkIndicesShapePtr = context->GetOptionalInputShape(kInputChunkIndicesIndex);
+    const bool hasCuSeqlens = cuSeqlensDesc != nullptr && cuSeqlensShapePtr != nullptr;
+    const bool hasChunkIndices = chunkIndicesDesc != nullptr && chunkIndicesShapePtr != nullptr;
+    if (hasCuSeqlens != hasChunkIndices) {
+        return ge::GRAPH_FAILED;
+    }
+    if (hasCuSeqlens) {
+        if (cuSeqlensDesc->GetDataType() != ge::DT_INT64 || chunkIndicesDesc->GetDataType() != ge::DT_INT64) {
+            return ge::GRAPH_FAILED;
+        }
+        const gert::Shape &cuSeqlensShape = cuSeqlensShapePtr->GetStorageShape();
+        const gert::Shape &chunkIndicesShape = chunkIndicesShapePtr->GetStorageShape();
+        if (cuSeqlensShape.GetDimNum() != 1 || cuSeqlensShape.GetDim(0) < 2 ||
+            !GetChunkPairCount(chunkIndicesShape, &nt) || nt == 0) {
+            return ge::GRAPH_FAILED;
+        }
+        isVarlen = 1;
+    }
+
     uint64_t bh = 0;
     uint64_t taskNum = 0;
     uint64_t scoreElems = 0;
@@ -216,6 +266,7 @@ ge::graphStatus TilingFunc(gert::TilingContext *context)
     tiling.set_usedAicNum(usedAicNum);
     tiling.set_usedAivNum(usedAivNum);
     tiling.set_btAlign(AlignUp(bt, kFp32BlockElems));
+    tiling.set_isVarlen(isVarlen);
     tiling.set_scoreWorkspaceBytes(scoreBytes);
     if (BuildCubeTiling(bt, k, kDtype, tiling) != ge::GRAPH_SUCCESS) {
         return ge::GRAPH_FAILED;

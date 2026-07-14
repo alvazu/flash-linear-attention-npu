@@ -29,6 +29,8 @@ aclnnStatus aclnnChunkScaledDotKktGetWorkspaceSize(
     const aclTensor *k,
     const aclTensor *g,
     const aclTensor *beta,
+    const aclIntArray *cuSeqlensOptional,
+    const aclIntArray *chunkIndicesOptional,
     int64_t chunkSize,
     aclTensor *A,
     uint64_t *workspaceSize,
@@ -52,6 +54,8 @@ aclnnStatus aclnnChunkScaledDotKkt(
 | k | 输入 | key 张量，Device 侧 aclTensor，shape 为 `[B,H,T,K]`，数据类型为 FLOAT16 或 BF16 |
 | g | 输入 | cumulative gate 张量，Device 侧 aclTensor，shape 为 `[B,H,T]`，数据类型为 FLOAT |
 | beta | 输入 | beta 缩放张量，Device 侧 aclTensor，shape 为 `[B,H,T]`，数据类型为 FLOAT |
+| cuSeqlensOptional | 输入 | 变长序列累计长度，Host 侧 aclIntArray；定长时传 `nullptr` |
+| chunkIndicesOptional | 输入 | 变长 chunk 元数据，Host 侧 aclIntArray，按 `[seq_id, chunk_id]` 成对存放；定长时传 `nullptr` |
 | chunkSize | 输入 | chunk 大小，仅支持 `16`、`32`、`64`、`128` |
 | A | 输出 | 输出张量，Device 侧 aclTensor，shape 为 `[B,H,T,chunkSize]`，数据类型为 FLOAT |
 | workspaceSize | 输出 | 返回执行该算子所需的 workspace 大小 |
@@ -72,8 +76,10 @@ aclnnStatus aclnnChunkScaledDotKkt(
 2. `g` 和 `beta` 仅支持 FLOAT。
 3. `k` shape 为 `[B,H,T,K]`，`g`/`beta` shape 为 `[B,H,T]`。
 4. `chunkSize` 仅支持 `16`、`32`、`64`、`128`。
-5. 当前版本仅支持定长 dense 序列，不支持变长序列参数，也不支持 `gk` 分支。
-6. `aclnnChunkScaledDotKkt` 默认确定性实现。
+5. `cuSeqlensOptional` 和 `chunkIndicesOptional` 必须同时传入或同时为 `nullptr`。
+6. 变长模式下 `chunkIndicesOptional` 表示 `[seq_id, chunk_id]` 的 flatten 形式，`chunk_id` 从 0 开始。
+7. 当前版本不支持 `gk` 分支。
+8. `aclnnChunkScaledDotKkt` 默认确定性实现。
 
 ## 输出说明
 
@@ -95,6 +101,8 @@ torch.ops.npu.npu_chunk_scaled_dot_kkt(
     k: Tensor,
     g: Tensor,
     beta: Tensor,
+    cu_seqlens: list[int] | None = None,
+    chunk_indices: list[int] | None = None,
     chunk_size: int = 64,
 ) -> Tensor
 ```
@@ -106,6 +114,8 @@ torch.ops.npu.npu_chunk_scaled_dot_kkt(
 | k | Tensor | shape 为 `[B,H,T,K]`，dtype 为 `torch.float16` 或 `torch.bfloat16` |
 | g | Tensor | shape 为 `[B,H,T]`，dtype 为 `torch.float32` |
 | beta | Tensor | shape 为 `[B,H,T]`，dtype 为 `torch.float32` |
+| cu_seqlens | list[int] \| None | 变长序列累计长度；定长时为 `None` |
+| chunk_indices | list[int] \| None | 变长 chunk 元数据，按 `[seq_id, chunk_id]` 成对 flatten；定长时为 `None` |
 | chunk_size | int | chunk 大小，默认 64 |
 
 ### 返回值

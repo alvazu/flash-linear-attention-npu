@@ -17,6 +17,7 @@ BEGIN_TILING_DATA_DEF(ChunkScaledDotKktTilingData)
     TILING_DATA_FIELD_DEF(uint64_t, usedAicNum);
     TILING_DATA_FIELD_DEF(uint64_t, usedAivNum);
     TILING_DATA_FIELD_DEF(uint64_t, btAlign);
+    TILING_DATA_FIELD_DEF(uint64_t, isVarlen);
     TILING_DATA_FIELD_DEF(uint64_t, scoreWorkspaceBytes);
     TILING_DATA_FIELD_DEF_STRUCT(TCubeTiling, cubeTilingData);
 END_TILING_DATA_DEF;

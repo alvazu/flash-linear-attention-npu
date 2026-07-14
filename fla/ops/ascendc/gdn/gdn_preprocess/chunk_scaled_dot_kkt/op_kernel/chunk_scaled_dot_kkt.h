@@ -31,6 +31,8 @@ public:
     __aicore__ inline void Init(GM_ADDR k,
                                 GM_ADDR g,
                                 GM_ADDR beta,
+                                GM_ADDR cuSeqlens,
+                                GM_ADDR chunkIndices,
                                 GM_ADDR a,
                                 GM_ADDR scoreWorkspace,
                                 uint64_t b,
@@ -43,6 +45,7 @@ public:
                                 uint64_t usedAicNum,
                                 uint64_t usedAivNum,
                                 uint64_t btAlign,
+                                uint64_t isVarlen,
                                 TPipe *pipe)
     {
         pipe_ = pipe;
@@ -56,12 +59,17 @@ public:
         usedAicNum_ = static_cast<int64_t>(usedAicNum);
         usedAivNum_ = static_cast<int64_t>(usedAivNum);
         btAlign_ = static_cast<int64_t>(btAlign);
+        isVarlen_ = static_cast<int64_t>(isVarlen);
 
         kGm.SetGlobalBuffer((__gm__ KType *)k, B_ * H_ * T_ * K_);
         gGm.SetGlobalBuffer((__gm__ float *)g, B_ * H_ * T_);
         betaGm.SetGlobalBuffer((__gm__ float *)beta, B_ * H_ * T_);
         aGm.SetGlobalBuffer((__gm__ float *)a, B_ * T_ * H_ * BT_);
         scoreGm.SetGlobalBuffer((__gm__ float *)scoreWorkspace, taskNum_ * BT_ * BT_);
+        if (isVarlen_ != 0) {
+            cuSeqlensGm.SetGlobalBuffer((__gm__ int64_t *)cuSeqlens);
+            chunkIndicesGm.SetGlobalBuffer((__gm__ int64_t *)chunkIndices, NT_ * 2);
+        }
 
         if ASCEND_IS_AIV {
             pipe_->InitBuffer(gQueue_, BUFFER_NUM, btAlign_ * sizeof(float));
@@ -99,8 +107,19 @@ private:
         chunk = task % NT_;
         h = (task / NT_) % H_;
         b = task / (H_ * NT_);
-        rowStart = chunk * BT_;
-        valid = MinI64(BT_, T_ - rowStart);
+        if (isVarlen_ != 0) {
+            const int64_t seqId = chunkIndicesGm.GetValue(chunk * 2);
+            const int64_t localChunk = chunkIndicesGm.GetValue(chunk * 2 + 1);
+            const int64_t bos = cuSeqlensGm.GetValue(seqId);
+            const int64_t eos = cuSeqlensGm.GetValue(seqId + 1);
+            chunk = localChunk;
+            rowStart = bos + localChunk * BT_;
+            valid = MinI64(BT_, eos - rowStart);
+            valid = MinI64(valid, T_ - rowStart);
+        } else {
+            rowStart = chunk * BT_;
+            valid = MinI64(BT_, T_ - rowStart);
+        }
         if (valid < 0) {
             valid = 0;
         }
@@ -323,6 +342,8 @@ private:
     GlobalTensor<float> betaGm;
     GlobalTensor<float> aGm;
     GlobalTensor<float> scoreGm;
+    GlobalTensor<int64_t> cuSeqlensGm;
+    GlobalTensor<int64_t> chunkIndicesGm;
 
     int64_t B_ = 0;
     int64_t H_ = 0;
@@ -334,6 +355,7 @@ private:
     int64_t usedAicNum_ = 0;
     int64_t usedAivNum_ = 0;
     int64_t btAlign_ = 0;
+    int64_t isVarlen_ = 0;
 };
 }  // namespace NsChunkScaledDotKkt
 
