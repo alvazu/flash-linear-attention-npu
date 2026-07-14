@@ -66,8 +66,11 @@ constexpr uint32_t KDA_SOLVE_SCRATCH_Y0 = 1;
 constexpr uint32_t KDA_SOLVE_SCRATCH_TMP = 2;
 constexpr uint32_t KDA_SOLVE_SCRATCH_Y1 = 3;
 constexpr uint32_t KDA_SOLVE_SCRATCH_SLOTS = 4;
-// Direct 64x64 MCH needs five rounds to cover all strict-lower powers up to 63.
-constexpr uint32_t KDA_SOLVE_MCH_ITERS = 5;
+constexpr uint32_t KDA_SOLVE_DIAG_BT = 16;
+constexpr uint32_t KDA_SOLVE_DIAG_BLOCKS = KDA_SOLVE_BT / KDA_SOLVE_DIAG_BT;
+constexpr uint32_t KDA_SOLVE_DIAG_MCH_ITERS = 3;
+// Tail still uses direct padded 64x64 MCH; five rounds cover strict-lower powers up to 63.
+constexpr uint32_t KDA_SOLVE_FULL_MCH_ITERS = 5;
 constexpr uint32_t KDA_SCORE_REF_BC = 16;
 constexpr uint32_t KDA_VEC_ARENA_ELEMENTS = 32768;
 constexpr uint32_t KDA_BITS_PER_MASK_BYTE = 8;
@@ -1644,61 +1647,71 @@ private:
         WaitFlag<HardEvent::MTE3_V>(KDA_SCALAR_MTE3_V_EVENT_ID);
     }
 
-    __aicore__ inline void ComputeAkkInverseMch64(uint64_t b, uint64_t hv, uint64_t chunkIdx, uint64_t start)
+    __aicore__ inline void AddSolveTmpToXDiagRows(uint64_t b, uint64_t hv, uint64_t chunkIdx, uint64_t start,
+                                                  uint64_t rowBegin, uint64_t rowEnd, bool storeAkk)
     {
-        uint64_t aBase = AOffset(b, hv, start, 0);
-        uint64_t xBase = SolveScratchOffset(b, hv, chunkIdx, KDA_SOLVE_SCRATCH_X);
-        uint64_t yBase = SolveScratchOffset(b, hv, chunkIdx, KDA_SOLVE_SCRATCH_Y0);
-        uint64_t yNextBase = SolveScratchOffset(b, hv, chunkIdx, KDA_SOLVE_SCRATCH_Y1);
-        uint64_t tmpBase = SolveScratchOffset(b, hv, chunkIdx, KDA_SOLVE_SCRATCH_TMP);
+        uint64_t rowCount = rowEnd - rowBegin;
+        if (rowCount == 0) {
+            return;
+        }
+        uint64_t elemCount = rowCount * KDA_SOLVE_BT;
+        DataCopyParams validParams{1, static_cast<uint16_t>(elemCount * sizeof(T)), 0, 0};
+        LocalTensor<float> arena = vecBuf_.Get<float>();
+        LocalTensor<float> xLocal = arena;
+        LocalTensor<float> tmpLocal = arena[elemCount];
+        constexpr uint64_t typedOffsetFloats = 20480;
+        constexpr uint64_t typedOffset = typedOffsetFloats * sizeof(float) / sizeof(T);
+        uint64_t xBase = SolveScratchOffset(b, hv, chunkIdx, KDA_SOLVE_SCRATCH_X) + rowBegin * KDA_SOLVE_BT;
+        uint64_t tmpBase = SolveScratchOffset(b, hv, chunkIdx, KDA_SOLVE_SCRATCH_TMP) + rowBegin * KDA_SOLVE_BT;
+        uint64_t token = start + rowBegin;
 
-        CubeGemmSolveSub(akk_, aBase, 0, 0, akk_, aBase, 0, 0, h_, yBase, 0, 0, KDA_SOLVE_BT,
-                         KDA_SOLVE_BT, KDA_SOLVE_BT);
-        for (uint32_t iter = 0; iter < KDA_SOLVE_MCH_ITERS; ++iter) {
-            CubeGemmSolveSub(h_, xBase, 0, 0, h_, yBase, 0, 0, h_, tmpBase, 0, 0, KDA_SOLVE_BT,
-                             KDA_SOLVE_BT, KDA_SOLVE_BT);
-            Catlass::Arch::CrossCoreSetFlagWithReverse<0x2, PIPE_FIX>(scoreDoneFlag_);
-            if (iter + 1 < KDA_SOLVE_MCH_ITERS) {
-                CubeGemmSolveSub(h_, yBase, 0, 0, h_, yBase, 0, 0, h_, yNextBase, 0, 0, KDA_SOLVE_BT,
-                                 KDA_SOLVE_BT, KDA_SOLVE_BT);
+        if constexpr (IsSameType<T, float>::value) {
+            DataCopy(xLocal, h_[xBase], static_cast<uint32_t>(elemCount));
+            DataCopy(tmpLocal, h_[tmpBase], static_cast<uint32_t>(elemCount));
+            SetFlag<HardEvent::MTE2_V>(KDA_MTE2_V_EVENT_ID);
+            WaitFlag<HardEvent::MTE2_V>(KDA_MTE2_V_EVENT_ID);
+        } else {
+            LocalTensor<T> typedX = vecBuf_.Get<T>()[typedOffset];
+            LocalTensor<T> typedTmp = typedX[elemCount];
+            DataCopy(typedX, h_[xBase], static_cast<uint32_t>(elemCount));
+            DataCopy(typedTmp, h_[tmpBase], static_cast<uint32_t>(elemCount));
+            SetFlag<HardEvent::MTE2_V>(KDA_MTE2_V_EVENT_ID);
+            WaitFlag<HardEvent::MTE2_V>(KDA_MTE2_V_EVENT_ID);
+            Cast(xLocal, typedX, RoundMode::CAST_NONE, static_cast<uint32_t>(elemCount));
+            Cast(tmpLocal, typedTmp, RoundMode::CAST_NONE, static_cast<uint32_t>(elemCount));
+            PipeBarrier<PIPE_V>();
+        }
+
+        for (uint64_t localRow = 0; localRow < rowCount; ++localRow) {
+            uint64_t row = rowBegin + localRow;
+            uint64_t col = (row / KDA_SOLVE_DIAG_BT) * KDA_SOLVE_DIAG_BT;
+            uint64_t offset = localRow * KDA_SOLVE_BT + col;
+            Add(xLocal[offset], xLocal[offset], tmpLocal[offset], KDA_SOLVE_DIAG_BT);
+            PipeBarrier<PIPE_V>();
+        }
+
+        if constexpr (IsSameType<T, float>::value) {
+            SetFlag<HardEvent::V_MTE3>(KDA_SCALAR_V_MTE3_EVENT_ID);
+            WaitFlag<HardEvent::V_MTE3>(KDA_SCALAR_V_MTE3_EVENT_ID);
+            DataCopy(h_[xBase], xLocal, static_cast<uint32_t>(elemCount));
+            if (storeAkk) {
+                DataCopyPad(akk_[AOffset(b, hv, token, 0)], xLocal, validParams);
             }
-            Catlass::Arch::CrossCoreWaitFlagWithReverse<0x2, PIPE_FIX>(scoreReadyFlag_);
-            if (iter + 1 < KDA_SOLVE_MCH_ITERS) {
-                uint64_t oldYBase = yBase;
-                yBase = yNextBase;
-                yNextBase = oldYBase;
+        } else {
+            LocalTensor<T> typedX = vecBuf_.Get<T>()[typedOffset];
+            Cast(typedX, xLocal, RoundMode::CAST_RINT, static_cast<uint32_t>(elemCount));
+            PipeBarrier<PIPE_V>();
+            SetFlag<HardEvent::V_MTE3>(KDA_SCALAR_V_MTE3_EVENT_ID);
+            WaitFlag<HardEvent::V_MTE3>(KDA_SCALAR_V_MTE3_EVENT_ID);
+            DataCopy(h_[xBase], typedX, static_cast<uint32_t>(elemCount));
+            if (storeAkk) {
+                DataCopyPad(akk_[AOffset(b, hv, token, 0)], typedX, validParams);
             }
         }
-    }
-
-    __aicore__ inline void ComputeAkkInverseMchTail(uint64_t b, uint64_t hv, uint64_t chunkIdx,
-                                                    uint64_t start, uint64_t curT)
-    {
-        uint64_t xBase = SolveScratchOffset(b, hv, chunkIdx, KDA_SOLVE_SCRATCH_X);
-        uint64_t lBase = SolveScratchOffset(b, hv, chunkIdx, KDA_SOLVE_SCRATCH_Y0);
-        uint64_t yBase = SolveScratchOffset(b, hv, chunkIdx, KDA_SOLVE_SCRATCH_Y1);
-        uint64_t yNextBase = SolveScratchOffset(b, hv, chunkIdx, KDA_SOLVE_SCRATCH_Y0);
-        uint64_t tmpBase = SolveScratchOffset(b, hv, chunkIdx, KDA_SOLVE_SCRATCH_TMP);
-        (void)start;
-        (void)curT;
-
-        CubeGemmSolveSub(h_, lBase, 0, 0, h_, lBase, 0, 0, h_, yBase, 0, 0, KDA_SOLVE_BT,
-                         KDA_SOLVE_BT, KDA_SOLVE_BT);
-        for (uint32_t iter = 0; iter < KDA_SOLVE_MCH_ITERS; ++iter) {
-            CubeGemmSolveSub(h_, xBase, 0, 0, h_, yBase, 0, 0, h_, tmpBase, 0, 0, KDA_SOLVE_BT,
-                             KDA_SOLVE_BT, KDA_SOLVE_BT);
-            Catlass::Arch::CrossCoreSetFlagWithReverse<0x2, PIPE_FIX>(scoreDoneFlag_);
-            if (iter + 1 < KDA_SOLVE_MCH_ITERS) {
-                CubeGemmSolveSub(h_, yBase, 0, 0, h_, yBase, 0, 0, h_, yNextBase, 0, 0,
-                                 KDA_SOLVE_BT, KDA_SOLVE_BT, KDA_SOLVE_BT);
-            }
-            Catlass::Arch::CrossCoreWaitFlagWithReverse<0x2, PIPE_FIX>(scoreReadyFlag_);
-            if (iter + 1 < KDA_SOLVE_MCH_ITERS) {
-                uint64_t oldYBase = yBase;
-                yBase = yNextBase;
-                yNextBase = oldYBase;
-            }
-        }
+        SetFlag<HardEvent::MTE3_MTE2>(KDA_MTE3_MTE2_EVENT_ID);
+        WaitFlag<HardEvent::MTE3_MTE2>(KDA_MTE3_MTE2_EVENT_ID);
+        SetFlag<HardEvent::MTE3_V>(KDA_SCALAR_MTE3_V_EVENT_ID);
+        WaitFlag<HardEvent::MTE3_V>(KDA_SCALAR_MTE3_V_EVENT_ID);
     }
 
     __aicore__ inline void ComputeAkkMerge64Cube(uint64_t b, uint64_t hv, uint64_t chunkIdx, uint64_t start)
@@ -1715,6 +1728,76 @@ private:
 
         CubeGemmSolveSub(akk_, aiBase, 32, 32, h_, negABase, 32, 0, h_, tmpBase, 0, 0, 32, 32, 32);
         CubeGemmSolveSub(h_, tmpBase, 0, 0, akk_, aiBase, 0, 0, akk_, aiBase, 32, 0, 32, 32, 32);
+    }
+
+    __aicore__ inline void ComputeAkkInverseMch64(uint64_t b, uint64_t hv, uint64_t chunkIdx, uint64_t start)
+    {
+        uint64_t aBase = AOffset(b, hv, start, 0);
+        uint64_t xBase = SolveScratchOffset(b, hv, chunkIdx, KDA_SOLVE_SCRATCH_X);
+        uint64_t yBase = SolveScratchOffset(b, hv, chunkIdx, KDA_SOLVE_SCRATCH_Y0);
+        uint64_t yNextBase = SolveScratchOffset(b, hv, chunkIdx, KDA_SOLVE_SCRATCH_Y1);
+        uint64_t tmpBase = SolveScratchOffset(b, hv, chunkIdx, KDA_SOLVE_SCRATCH_TMP);
+
+        // Full chunks follow GDN solve_tri's block idea: solve four 16x16 diagonal blocks first,
+        // then merge off-diagonal lower blocks with MBH-style cube GEMMs.
+        for (uint32_t block = 0; block < KDA_SOLVE_DIAG_BLOCKS; ++block) {
+            uint32_t off = block * KDA_SOLVE_DIAG_BT;
+            CubeGemmSolveSub(akk_, aBase, off, off, akk_, aBase, off, off, h_, yBase, off, off,
+                             KDA_SOLVE_DIAG_BT, KDA_SOLVE_DIAG_BT, KDA_SOLVE_DIAG_BT);
+        }
+        for (uint32_t iter = 0; iter < KDA_SOLVE_DIAG_MCH_ITERS; ++iter) {
+            for (uint32_t block = 0; block < KDA_SOLVE_DIAG_BLOCKS; ++block) {
+                uint32_t off = block * KDA_SOLVE_DIAG_BT;
+                CubeGemmSolveSub(h_, xBase, off, off, h_, yBase, off, off, h_, tmpBase, off, off,
+                                 KDA_SOLVE_DIAG_BT, KDA_SOLVE_DIAG_BT, KDA_SOLVE_DIAG_BT);
+            }
+            Catlass::Arch::CrossCoreSetFlagWithReverse<0x2, PIPE_FIX>(scoreDoneFlag_);
+            if (iter + 1 < KDA_SOLVE_DIAG_MCH_ITERS) {
+                for (uint32_t block = 0; block < KDA_SOLVE_DIAG_BLOCKS; ++block) {
+                    uint32_t off = block * KDA_SOLVE_DIAG_BT;
+                    CubeGemmSolveSub(h_, yBase, off, off, h_, yBase, off, off, h_, yNextBase, off, off,
+                                     KDA_SOLVE_DIAG_BT, KDA_SOLVE_DIAG_BT, KDA_SOLVE_DIAG_BT);
+                }
+            }
+            Catlass::Arch::CrossCoreWaitFlagWithReverse<0x2, PIPE_FIX>(scoreReadyFlag_);
+            if (iter + 1 < KDA_SOLVE_DIAG_MCH_ITERS) {
+                uint64_t oldYBase = yBase;
+                yBase = yNextBase;
+                yNextBase = oldYBase;
+            }
+        }
+        ComputeAkkMerge64Cube(b, hv, chunkIdx, start);
+        Catlass::Arch::CrossCoreSetFlagWithReverse<0x2, PIPE_FIX>(scoreDoneFlag_);
+    }
+
+    __aicore__ inline void ComputeAkkInverseMchTail(uint64_t b, uint64_t hv, uint64_t chunkIdx,
+                                                    uint64_t start, uint64_t curT)
+    {
+        uint64_t xBase = SolveScratchOffset(b, hv, chunkIdx, KDA_SOLVE_SCRATCH_X);
+        uint64_t lBase = SolveScratchOffset(b, hv, chunkIdx, KDA_SOLVE_SCRATCH_Y0);
+        uint64_t yBase = SolveScratchOffset(b, hv, chunkIdx, KDA_SOLVE_SCRATCH_Y1);
+        uint64_t yNextBase = SolveScratchOffset(b, hv, chunkIdx, KDA_SOLVE_SCRATCH_Y0);
+        uint64_t tmpBase = SolveScratchOffset(b, hv, chunkIdx, KDA_SOLVE_SCRATCH_TMP);
+        (void)start;
+        (void)curT;
+
+        CubeGemmSolveSub(h_, lBase, 0, 0, h_, lBase, 0, 0, h_, yBase, 0, 0, KDA_SOLVE_BT,
+                         KDA_SOLVE_BT, KDA_SOLVE_BT);
+        for (uint32_t iter = 0; iter < KDA_SOLVE_FULL_MCH_ITERS; ++iter) {
+            CubeGemmSolveSub(h_, xBase, 0, 0, h_, yBase, 0, 0, h_, tmpBase, 0, 0, KDA_SOLVE_BT,
+                             KDA_SOLVE_BT, KDA_SOLVE_BT);
+            Catlass::Arch::CrossCoreSetFlagWithReverse<0x2, PIPE_FIX>(scoreDoneFlag_);
+            if (iter + 1 < KDA_SOLVE_FULL_MCH_ITERS) {
+                CubeGemmSolveSub(h_, yBase, 0, 0, h_, yBase, 0, 0, h_, yNextBase, 0, 0,
+                                 KDA_SOLVE_BT, KDA_SOLVE_BT, KDA_SOLVE_BT);
+            }
+            Catlass::Arch::CrossCoreWaitFlagWithReverse<0x2, PIPE_FIX>(scoreReadyFlag_);
+            if (iter + 1 < KDA_SOLVE_FULL_MCH_ITERS) {
+                uint64_t oldYBase = yBase;
+                yBase = yNextBase;
+                yNextBase = oldYBase;
+            }
+        }
     }
 
     __aicore__ inline void FinalizeAqkAkk(uint64_t b, uint64_t hv, uint64_t start, uint64_t curT)
@@ -2389,15 +2472,19 @@ private:
         }
         if (useAkkCubeSolve) {
             Catlass::Arch::CrossCoreSetFlagWithReverse<0x2, PIPE_MTE3>(scoreReadyFlag_);
-            for (uint32_t iter = 0; iter < KDA_SOLVE_MCH_ITERS; ++iter) {
+            uint32_t solveIters = (curT == KDA_SOLVE_BT) ? KDA_SOLVE_DIAG_MCH_ITERS : KDA_SOLVE_FULL_MCH_ITERS;
+            for (uint32_t iter = 0; iter < solveIters; ++iter) {
                 Catlass::Arch::CrossCoreWaitFlagWithReverse<0x2, PIPE_MTE2>(scoreDoneFlag_);
                 if (curT == KDA_SOLVE_BT) {
-                    AddSolveTmpToXRows(b, hv, chunkIdx, start, solveRowBegin, solveRowEnd,
-                                       iter + 1 == KDA_SOLVE_MCH_ITERS);
+                    AddSolveTmpToXDiagRows(b, hv, chunkIdx, start, solveRowBegin, solveRowEnd,
+                                           iter + 1 == solveIters);
                 } else if (subBlockIdx == 0) {
-                    AddSolveTmpToXTail(b, hv, chunkIdx, start, curT, iter + 1 == KDA_SOLVE_MCH_ITERS);
+                    AddSolveTmpToXTail(b, hv, chunkIdx, start, curT, iter + 1 == solveIters);
                 }
                 Catlass::Arch::CrossCoreSetFlagWithReverse<0x2, PIPE_MTE3>(scoreReadyFlag_);
+            }
+            if (curT == KDA_SOLVE_BT) {
+                Catlass::Arch::CrossCoreWaitFlagWithReverse<0x2, PIPE_MTE2>(scoreDoneFlag_);
             }
         }
         if (!usePostWuCube) {
