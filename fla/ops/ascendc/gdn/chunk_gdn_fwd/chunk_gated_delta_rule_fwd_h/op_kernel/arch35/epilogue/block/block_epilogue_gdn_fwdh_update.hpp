@@ -23,7 +23,8 @@ template <
     class GInputType_,
     class HInputType_,
     class HUpdateInputType_,
-    class FinalStateType_
+    class FinalStateType_,
+    class KGatedTag
 >
 class BlockEpilogue <
     EpilogueAtlasGDNFwdHUpdate,
@@ -31,8 +32,10 @@ class BlockEpilogue <
     GInputType_,
     HInputType_,
     HUpdateInputType_,
-    FinalStateType_
+    FinalStateType_,
+    KGatedTag
 > {
+    static constexpr bool kGated = KGatedTag::value;
 public:
     // Type aliases
     using DispatchPolicy = EpilogueAtlasGDNFwdHUpdate;
@@ -79,6 +82,14 @@ public:
         hUbTensor_pong = resource.ubBuf.template GetBufferByByte<HElementOutput>(UPDATE_SCRATCH_BUF_OFFSET);
         finalOutputUbTensor_pong = resource.ubBuf.template GetBufferByByte<FinalStateElement>(UPDATE_SCRATCH_BUF_OFFSET);
         glastUbTensor_pong = resource.ubBuf.template GetBufferByByte<float>(UPDATE_G_BUF_OFFSET);
+
+        if constexpr (kGated) {
+            gkLastUbTensor_ping = resource.ubBuf.template GetBufferByByte<float>(PING_G_SUB_BUF_OFFSET);
+            gkLastUbTensor_pong = resource.ubBuf.template GetBufferByByte<float>(PONG_G_SUB_BUF_OFFSET);
+            gkInputUbTensor_ping = resource.ubBuf.template GetBufferByByte<GElementInput>(PING_G_INPUT_BUF_OFFSET);
+            gkInputUbTensor_pong = resource.ubBuf.template GetBufferByByte<GElementInput>(PONG_G_INPUT_BUF_OFFSET);
+            shareBufferGk_ = resource.ubBuf.template GetBufferByByte<uint8_t>(SHARE_BUF_OFFSET);
+        }
 
     }
 
@@ -137,6 +148,7 @@ public:
         AscendC::GlobalTensor<GElementInput> gInput,
         AscendC::GlobalTensor<HElementInput> hInput,
         AscendC::GlobalTensor<float> hUpdateInput,
+        AscendC::GlobalTensor<GElementInput> gkInput,
         uint32_t chunkSize,
         uint32_t kHeadDim,
         uint32_t vBlockDim,
@@ -196,7 +208,7 @@ public:
         AscendC::WaitFlag<AscendC::HardEvent::S_V>(EVENT_ID3 + pingpongFlag);
 
         Arch::CrossCoreWaitFlag(cube2Done);
-
+        // fix: need to adapt kGated. issue: A5 do not have vdim128 branch.
         bool waitHFromV = storeFinalState && isInitialState && std::is_same<FinalStateElement, float>::value;
         bool waitUpdateFromMte3 = false;
         for (uint32_t rowStart = rowBegin; rowStart < rowEnd; rowStart += ROW_TILE) {
@@ -305,6 +317,11 @@ private:
     AscendC::LocalTensor<FinalStateElement> finalOutputUbTensor_pong;
     AscendC::LocalTensor<float> glastUbTensor_pong;
 
+    AscendC::LocalTensor<float> gkLastUbTensor_ping;
+    AscendC::LocalTensor<float> gkLastUbTensor_pong;
+    AscendC::LocalTensor<GElementInput> gkInputUbTensor_ping;
+    AscendC::LocalTensor<GElementInput> gkInputUbTensor_pong;
+    AscendC::LocalTensor<uint8_t> shareBufferGk_;
 };
 }
 
