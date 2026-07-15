@@ -24,14 +24,14 @@
         <mxCell id="import" value="&lt;b&gt;4  import / 符号加载&lt;/b&gt;&lt;br/&gt;&lt;br/&gt;&lt;b&gt;本阶段确定&lt;/b&gt;&lt;br/&gt;&amp;bull; 实际 OPP vendor 路径&lt;br/&gt;&amp;bull; libcust_opapi.so&lt;br/&gt;&amp;bull; 必需 aclnn 动态符号&lt;br/&gt;&amp;bull; 不主动 import torch_npu" style="rounded=1;arcSize=7;whiteSpace=wrap;html=1;fillColor=#FFF7E8;strokeColor=#D9970B;strokeWidth=2;fontSize=14;fontColor=#172033;spacing=9;align=left;" vertex="1" parent="1">
           <mxGeometry x="915" y="150" width="250" height="350" as="geometry"/>
         </mxCell>
-        <mxCell id="call" value="&lt;b&gt;5  首次算子调用&lt;/b&gt;&lt;br/&gt;&lt;br/&gt;&lt;b&gt;本阶段确定&lt;/b&gt;&lt;br/&gt;&amp;bull; torch tensor / storage API&lt;br/&gt;&amp;bull; torch_npu backend 能力&lt;br/&gt;&amp;bull; current NPU stream&lt;br/&gt;&amp;bull; 当前算子的 aclnn 符号" style="rounded=1;arcSize=7;whiteSpace=wrap;html=1;fillColor=#F4F0FF;strokeColor=#8266B5;strokeWidth=2;fontSize=14;fontColor=#172033;spacing=9;align=left;" vertex="1" parent="1">
+        <mxCell id="call" value="&lt;b&gt;5  首次算子调用&lt;/b&gt;&lt;br/&gt;&lt;br/&gt;&lt;b&gt;本阶段确定&lt;/b&gt;&lt;br/&gt;&amp;bull; torch tensor / storage API&lt;br/&gt;&amp;bull; Ascend PyTorch NPU 运行时能力&lt;br/&gt;&amp;bull; 通常由 torch_npu 提供&lt;br/&gt;&amp;bull; device guard / target stream&lt;br/&gt;&amp;bull; 当前算子的 aclnn 符号" style="rounded=1;arcSize=7;whiteSpace=wrap;html=1;fillColor=#F4F0FF;strokeColor=#8266B5;strokeWidth=2;fontSize=14;fontColor=#172033;spacing=9;align=left;" vertex="1" parent="1">
           <mxGeometry x="1210" y="150" width="250" height="350" as="geometry"/>
         </mxCell>
 
         <mxCell id="fixed" value="&lt;b&gt;构建时未冻结框架 ABI&lt;/b&gt;&lt;br/&gt;不读取 torch / torch_npu 头文件、生成代码或 dispatcher&lt;br/&gt;不生成 CPython / PyTorch C++ 扩展" style="rounded=1;arcSize=7;whiteSpace=wrap;html=1;fillColor=#EEF4FF;strokeColor=#5B7DB1;strokeWidth=2;fontSize=15;fontColor=#24466F;spacing=9;" vertex="1" parent="1">
           <mxGeometry x="30" y="575" width="545" height="120" as="geometry"/>
         </mxCell>
-        <mxCell id="runtime" value="&lt;b&gt;目标环境运行时确定&lt;/b&gt;&lt;br/&gt;Python × torch tensor API × torch_npu backend / stream × Triton&lt;br/&gt;fla_npu 通过能力契约适配，不按框架 patch 绑定" style="rounded=1;arcSize=7;whiteSpace=wrap;html=1;fillColor=#F4F0FF;strokeColor=#8266B5;strokeWidth=2;fontSize=15;fontColor=#49366B;spacing=9;" vertex="1" parent="1">
+        <mxCell id="runtime" value="&lt;b&gt;目标环境运行时确定&lt;/b&gt;&lt;br/&gt;Python × torch tensor API × Ascend PyTorch NPU 运行时 × Triton&lt;br/&gt;NPU 运行时能力通常由 torch_npu 提供；fla_npu 按能力适配" style="rounded=1;arcSize=7;whiteSpace=wrap;html=1;fillColor=#F4F0FF;strokeColor=#8266B5;strokeWidth=2;fontSize=15;fontColor=#49366B;spacing=9;" vertex="1" parent="1">
           <mxGeometry x="620" y="575" width="840" height="120" as="geometry"/>
         </mxCell>
         <mxCell id="matrix" value="&lt;b&gt;CI / 发布矩阵给出真实框架兼容范围&lt;/b&gt;&lt;br/&gt;逐组验证 Python、torch、torch_npu 的 tensor、stream、autograd、精度和 Example/ST&lt;br/&gt;结论是“这些组合经过验证”，不是“py3-none-any 自动保证所有组合”" style="rounded=1;arcSize=7;whiteSpace=wrap;html=1;fillColor=#E9F7EE;strokeColor=#4C9B60;strokeWidth=2.5;fontSize=16;fontColor=#244B2F;spacing=10;" vertex="1" parent="1">

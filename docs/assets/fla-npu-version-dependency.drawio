@@ -49,7 +49,7 @@
         <mxCell id="new-python" value="&lt;b&gt;纯 Python 包&lt;/b&gt;&lt;br/&gt;py3-none-any wheel&lt;br/&gt;无 CPython 扩展 ABI" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#F2FAF4;strokeColor=#4C9B60;strokeWidth=2;fontSize=15;fontColor=#172033;spacing=7;" vertex="1" parent="1">
           <mxGeometry x="710" y="180" width="250" height="100" as="geometry"/>
         </mxCell>
-        <mxCell id="new-tensor" value="&lt;b&gt;torch Python tensor API&lt;/b&gt;&lt;br/&gt;data_ptr / shape / stride / dtype&lt;br/&gt;current NPU stream" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#F2FAF4;strokeColor=#4C9B60;strokeWidth=2;fontSize=15;fontColor=#172033;spacing=7;" vertex="1" parent="1">
+        <mxCell id="new-tensor" value="&lt;b&gt;torch Python tensor API&lt;/b&gt;&lt;br/&gt;data_ptr / shape / stride / dtype&lt;br/&gt;device guard / target stream" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#F2FAF4;strokeColor=#4C9B60;strokeWidth=2;fontSize=15;fontColor=#172033;spacing=7;" vertex="1" parent="1">
           <mxGeometry x="1010" y="180" width="250" height="100" as="geometry"/>
         </mxCell>
         <mxCell id="new-ctypes" value="&lt;b&gt;Python ctypes ABI wrapper&lt;/b&gt;&lt;br/&gt;构造 ACL tensor descriptor&lt;br/&gt;直调 aclnn*GetWorkspaceSize / aclnn*" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FFF8E7;strokeColor=#D9970B;strokeWidth=2;fontSize=16;fontColor=#172033;spacing=8;" vertex="1" parent="1">
@@ -58,7 +58,7 @@
         <mxCell id="new-opp" value="&lt;b&gt;内嵌 OPP vendor 树&lt;/b&gt;&lt;br/&gt;libcust_opapi.so + 算子交付件&lt;br/&gt;随 wheel 安装到 fla_npu/opp" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FFF8E7;strokeColor=#D9970B;strokeWidth=2;fontSize=16;fontColor=#172033;spacing=8;" vertex="1" parent="1">
           <mxGeometry x="790" y="495" width="390" height="100" as="geometry"/>
         </mxCell>
-        <mxCell id="new-runtime" value="&lt;b&gt;目标环境框架能力&lt;/b&gt;&lt;br/&gt;torch tensor / storage / autograd&lt;br/&gt;torch_npu backend / current stream" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#F3EEFF;strokeColor=#8266B5;strokeWidth=2;fontSize=16;fontColor=#172033;spacing=8;" vertex="1" parent="1">
+        <mxCell id="new-runtime" value="&lt;b&gt;目标环境框架能力&lt;/b&gt;&lt;br/&gt;torch tensor / storage / autograd&lt;br/&gt;Ascend PyTorch NPU 运行时能力&lt;br/&gt;通常由 torch_npu 提供" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#F3EEFF;strokeColor=#8266B5;strokeWidth=2;fontSize=15;fontColor=#172033;spacing=8;" vertex="1" parent="1">
           <mxGeometry x="790" y="640" width="390" height="95" as="geometry"/>
         </mxCell>
         <mxCell id="new-result" value="&lt;b&gt;结果：默认 wheel 避开四类上层 ABI 绑定&lt;/b&gt;&lt;br/&gt;不绑定 torch_npu dispatcher、PyTorch C++、CPython 与 C++ ABI&lt;br/&gt;同一 wheel 覆盖经过验证的多组框架版本" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#EAF7ED;strokeColor=#4C9B60;strokeWidth=2.5;fontSize=16;fontColor=#244B2F;spacing=8;" vertex="1" parent="1">

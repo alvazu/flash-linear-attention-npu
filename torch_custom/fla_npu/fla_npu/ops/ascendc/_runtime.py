@@ -20,6 +20,7 @@ from __future__ import annotations
 import ctypes
 import sys
 from collections import deque
+from contextlib import contextmanager
 from typing import Iterable, Optional, Sequence
 
 
@@ -145,10 +146,53 @@ def chunk_num(total_tokens: int, chunk_size: int, chunk_indices: Optional[Sequen
     return (total_tokens + chunk_size - 1) // chunk_size
 
 
-def current_stream_ptr() -> int:
+def _npu_device_index(device) -> int:
+    if getattr(device, "type", None) != "npu":
+        raise TypeError(f"Expected a torch NPU device, got {device!r}.")
+    index = getattr(device, "index", None)
+    if index is not None:
+        return int(index)
+
     import torch
 
-    stream = torch.npu.current_stream()
+    return int(torch.npu.current_device())
+
+
+@contextmanager
+def _npu_device_guard(device):
+    """在一次 aclnn 调用期间切到 tensor 所在 NPU，并在退出时恢复。"""
+
+    import torch
+
+    device_index = _npu_device_index(device)
+    device_guard = getattr(torch.npu, "device", None)
+    if device_guard is not None:
+        with device_guard(device_index):
+            yield device_index
+        return
+
+    # 兼容仅提供 current_device/set_device 的早期 NPU Python runtime。
+    previous_index = int(torch.npu.current_device())
+    if previous_index != device_index:
+        torch.npu.set_device(device_index)
+    try:
+        yield device_index
+    finally:
+        if previous_index != device_index:
+            torch.npu.set_device(previous_index)
+
+
+def current_stream_ptr(device) -> int:
+    import torch
+
+    device_index = _npu_device_index(device)
+    try:
+        stream = torch.npu.current_stream(device_index)
+    except TypeError:
+        # 兼容只接受无参数 current_stream() 的早期实现。调用方已经持有
+        # device guard；这里保留 guard 使该 helper 单独调用时也不会取错卡。
+        with _npu_device_guard(device):
+            stream = torch.npu.current_stream()
     return int(getattr(stream, "npu_stream"))
 
 
@@ -226,15 +270,24 @@ class _AclIntArray:
 class _CallContext:
     """跟踪构造一次调用时创建的 descriptor 和临时 tensor。"""
 
-    def __init__(self, runtime: "_AclnnRuntime"):
+    def __init__(self, runtime: "_AclnnRuntime", device):
         self.runtime = runtime
+        self.device = device
+        self.device_index = _npu_device_index(device)
         self.resources = []
         self.keepalive_tensors = []
 
     def tensor(self, tensor, name: str = "tensor") -> ctypes.c_void_p:
         if tensor is None:
             return ctypes.c_void_p()
-        desc = _AclTensor(self.runtime, ensure_npu_tensor(tensor, name))
+        tensor = ensure_npu_tensor(tensor, name)
+        tensor_device_index = _npu_device_index(tensor.device)
+        if tensor_device_index != self.device_index:
+            raise ValueError(
+                f"{name} must be on npu:{self.device_index}, got npu:{tensor_device_index}; "
+                "one aclnn call cannot mix tensors from different NPU devices."
+            )
+        desc = _AclTensor(self.runtime, tensor)
         self.resources.append(desc)
         return ctypes.c_void_p(desc.ptr)
 
@@ -310,13 +363,13 @@ class _AclnnRuntime:
         self,
         name: str,
         args: Sequence[object],
-        outputs: Sequence[object],
+        device,
         *,
         get_workspace_argtypes: Optional[Sequence[object]] = None,
     ):
         # aclnn 调用约定是两段式：第一段创建 executor 并返回 workspace 大小，
         # 第二段传入 workspace 和 stream pointer 发起实际执行。workspace 使用
-        # 普通 torch NPU tensor 分配，从而跟随当前 PyTorch allocator 和 device。
+        # 普通 torch NPU tensor 分配，从而跟随目标 device 的 PyTorch allocator。
         get_workspace = self.symbol(f"{name}GetWorkspaceSize")
         launch = self.symbol(name)
         get_workspace.restype = ctypes.c_int
@@ -336,7 +389,6 @@ class _AclnnRuntime:
         if workspace_size.value:
             import torch
 
-            device = outputs[0].device
             workspace = torch.empty((int(workspace_size.value),), dtype=torch.uint8, device=device)
             workspace_ptr = ctypes.c_void_p(int(workspace.data_ptr()))
 
@@ -344,7 +396,7 @@ class _AclnnRuntime:
             workspace_ptr,
             ctypes.c_uint64(workspace_size.value),
             executor,
-            ctypes.c_void_p(current_stream_ptr()),
+            ctypes.c_void_p(current_stream_ptr(device)),
         )
         if ret != ACL_SUCCESS:
             raise RuntimeError(f"{name} failed with aclnnStatus={ret}.")
@@ -365,19 +417,42 @@ def finalize(outputs, workspace, keepalive_tensors):
     _RECENT_LAUNCH_STORAGE.append((tuple(outputs), workspace, tuple(keepalive_tensors)))
 
 
+def _call_device(outputs: Sequence[object]):
+    device = None
+    device_index = None
+    for index, output in enumerate(outputs):
+        if output is None:
+            continue
+        output = ensure_npu_tensor(output, f"output[{index}]")
+        output_device_index = _npu_device_index(output.device)
+        if device_index is None:
+            device = output.device
+            device_index = output_device_index
+        elif output_device_index != device_index:
+            raise ValueError(
+                f"output[{index}] must be on npu:{device_index}, got npu:{output_device_index}; "
+                "one aclnn call cannot mix tensors from different NPU devices."
+            )
+    if device is None:
+        raise ValueError("An aclnn call must have at least one NPU output tensor.")
+    return device
+
+
 def call_aclnn(name: str, build_args, outputs, *, get_workspace_argtypes=None):
     aclnn_runtime = runtime()
-    ctx = _CallContext(aclnn_runtime)
     outputs_tuple = outputs if isinstance(outputs, tuple) else (outputs,)
-    try:
-        args = build_args(ctx)
-        workspace = aclnn_runtime.call(
-            name,
-            args,
-            outputs_tuple,
-            get_workspace_argtypes=get_workspace_argtypes,
-        )
-    finally:
-        ctx.destroy()
+    device = _call_device(outputs_tuple)
+    ctx = _CallContext(aclnn_runtime, device)
+    with _npu_device_guard(device):
+        try:
+            args = build_args(ctx)
+            workspace = aclnn_runtime.call(
+                name,
+                args,
+                device,
+                get_workspace_argtypes=get_workspace_argtypes,
+            )
+        finally:
+            ctx.destroy()
     finalize(outputs_tuple, workspace, ctx.keepalive_tensors)
     return outputs

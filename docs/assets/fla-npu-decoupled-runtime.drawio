@@ -27,7 +27,7 @@
           <mxGeometry x="50" y="310" width="260" height="140" as="geometry"/>
         </mxCell>
 
-        <mxCell id="user" value="&lt;b&gt;用户代码或外部 executor&lt;/b&gt;&lt;br/&gt;先设置当前 NPU stream" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#F2FAF4;strokeColor=#4C9B60;strokeWidth=2;fontSize=16;fontColor=#172033;spacing=8;" vertex="1" parent="1">
+        <mxCell id="user" value="&lt;b&gt;用户代码或外部 executor&lt;/b&gt;&lt;br/&gt;设置目标 device 的 current stream" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#F2FAF4;strokeColor=#4C9B60;strokeWidth=2;fontSize=16;fontColor=#172033;spacing=8;" vertex="1" parent="1">
           <mxGeometry x="410" y="155" width="460" height="85" as="geometry"/>
         </mxCell>
         <mxCell id="ascendc" value="&lt;b&gt;fla_npu.ops.ascendc.&amp;lt;op&amp;gt;&lt;/b&gt;&lt;br/&gt;稳定公开接口" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#F2FAF4;strokeColor=#4C9B60;strokeWidth=2;fontSize=16;fontColor=#172033;spacing=8;" vertex="1" parent="1">
@@ -36,7 +36,7 @@
         <mxCell id="ctypes" value="&lt;b&gt;_aclnn_ctypes.py&lt;/b&gt;&lt;br/&gt;单算子 ABI wrapper；校验参数并分配输出 tensor" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FFF8E7;strokeColor=#D9970B;strokeWidth=2;fontSize=16;fontColor=#172033;spacing=8;" vertex="1" parent="1">
           <mxGeometry x="410" y="415" width="460" height="90" as="geometry"/>
         </mxCell>
-        <mxCell id="runtime" value="&lt;b&gt;_runtime.py&lt;/b&gt;&lt;br/&gt;构造 ACL tensor descriptor&lt;br/&gt;获取 current_stream_ptr()&lt;br/&gt;管理 workspace 与异步对象保活" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FFF8E7;strokeColor=#D9970B;strokeWidth=2;fontSize=16;fontColor=#172033;spacing=8;" vertex="1" parent="1">
+        <mxCell id="runtime" value="&lt;b&gt;_runtime.py&lt;/b&gt;&lt;br/&gt;同 device 校验 + NPU device guard&lt;br/&gt;构造 descriptor + 获取目标 current stream&lt;br/&gt;管理 workspace 与异步对象保活" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FFF8E7;strokeColor=#D9970B;strokeWidth=2;fontSize=16;fontColor=#172033;spacing=8;" vertex="1" parent="1">
           <mxGeometry x="410" y="555" width="460" height="120" as="geometry"/>
         </mxCell>
         <mxCell id="opapi" value="&lt;b&gt;libcust_opapi.so&lt;/b&gt;&lt;br/&gt;aclnn*GetWorkspaceSize / aclnn*" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FFF8E7;strokeColor=#D9970B;strokeWidth=2;fontSize=16;fontColor=#172033;spacing=8;" vertex="1" parent="1">

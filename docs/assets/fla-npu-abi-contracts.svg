@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1500" height="1040" viewBox="0 0 1500 1040" role="img" aria-labelledby="title desc">
   <title id="title">PyTorch 和 torch_npu 解耦需要稳定的接口与跨版本策略</title>
-  <desc id="desc">从 torch tensor 和 storage、torch_npu backend 和 stream 到 autograd、必要 C 符号及 Triton，列出对应跨版本兼容策略。</desc>
+  <desc id="desc">从 torch tensor 和 storage、Ascend PyTorch NPU 运行时能力到 autograd、必要 C 符号及 Triton，列出对应跨版本兼容策略。</desc>
   <defs>
     <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#4C9B60"/></marker>
     <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#5B7DB1"/></marker>
@@ -20,7 +20,7 @@
   </defs>
   <rect width="1500" height="1040" fill="#FFFFFF"/>
   <text x="750" y="55" text-anchor="middle" font-size="25" font-weight="700">PyTorch / torch_npu 解耦需要稳定的接口与跨版本策略</text>
-  <text x="750" y="92" text-anchor="middle" font-size="15" fill="#52606D">tensor / storage、backend / stream、autograd 和必要 C 符号采用分层能力契约</text>
+  <text x="750" y="92" text-anchor="middle" font-size="15" fill="#52606D">tensor / storage、NPU 运行时、autograd 和必要 C 符号采用分层能力契约</text>
 
   <rect class="box" x="40" y="120" width="900" height="55" fill="#EEF4FF" stroke="#5B7DB1"/>
   <text class="header" x="490" y="155" text-anchor="middle" fill="#24466F">稳定接口 / ABI 契约</text>
@@ -42,9 +42,9 @@
   <text x="1245" text-anchor="middle"><tspan class="node-title" x="1245" y="219">能力探测 + Python adapter</tspan><tspan class="node-text" x="1245" y="243">保留 untyped_storage / storage fallback</tspan><tspan class="node-text" x="1245" y="265">不按 torch patch 锁版本</tspan></text>
 
   <rect class="box" x="40" y="305" width="900" height="80" fill="#EEF4FF" stroke="#5B7DB1"/>
-  <text x="65"><tspan class="node-title" x="65" y="330">2  torch_npu backend / stream 能力契约</tspan><tspan class="node-text" x="65" y="356">NPU device 注册、NPU tensor 可执行性、torch.npu.current_stream()</tspan><tspan class="node-text" x="65" y="377">npu_stream 指针与外部 executor 的当前 stream 语义</tspan></text>
+  <text x="65"><tspan class="node-title" x="65" y="330">2  Ascend PyTorch NPU 运行时能力（通常由 torch_npu 提供）</tspan><tspan class="node-text" x="65" y="356">NPU device 注册与 guard、NPU tensor 可执行性</tspan><tspan class="node-text" x="65" y="377">torch.npu.current_stream(device)、npu_stream 与外部 executor 语义</tspan></text>
   <rect class="box" x="1030" y="305" width="430" height="80" fill="#EEF4FF" stroke="#5B7DB1"/>
-  <text x="1245" text-anchor="middle"><tspan class="node-title" x="1245" y="329">backend smoke + stream provider</tspan><tspan class="node-text" x="1245" y="353">功能探针确认 torch / torch_npu 配套</tspan><tspan class="node-text" x="1245" y="375">不把 torch_npu 变成默认 import 依赖</tspan></text>
+  <text x="1245" text-anchor="middle"><tspan class="node-title" x="1245" y="329">NPU 运行时 smoke + device/stream provider</tspan><tspan class="node-text" x="1245" y="353">功能探针确认 torch / torch_npu 配套</tspan><tspan class="node-text" x="1245" y="375">不把 torch_npu 变成默认 import 依赖</tspan></text>
 
   <rect class="box" x="40" y="415" width="900" height="80" fill="#FFF7E8" stroke="#D9970B"/>
   <text x="65"><tspan class="node-title" x="65" y="440">3  ACL descriptor / runtime C ABI</tspan><tspan class="node-text" x="65" y="466">aclCreateTensor / aclDestroyTensor / aclCreateIntArray / aclDestroyIntArray</tspan><tspan class="node-text" x="65" y="487">aclTensor、aclIntArray、aclOpExecutor、aclrtStream 保持 opaque 语义</tspan></text>

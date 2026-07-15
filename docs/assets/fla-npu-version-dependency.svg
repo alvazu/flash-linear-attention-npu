@@ -113,7 +113,7 @@
   <text text-anchor="middle" x="1135">
     <tspan class="node-title" x="1135" y="211">torch Python tensor API</tspan>
     <tspan class="node-text" x="1135" y="240">data_ptr / shape / stride / dtype</tspan>
-    <tspan class="node-text" x="1135" y="265">current NPU stream</tspan>
+    <tspan class="node-text" x="1135" y="265">device guard / target stream</tspan>
   </text>
   <rect class="box" x="790" y="340" width="390" height="100" fill="#FFF8E7" stroke="#D9970B"/>
   <text text-anchor="middle" x="985">
@@ -129,9 +129,10 @@
   </text>
   <rect class="box" x="790" y="640" width="390" height="95" fill="#F3EEFF" stroke="#8266B5"/>
   <text text-anchor="middle" x="985">
-    <tspan class="node-title" x="985" y="669">目标环境框架能力</tspan>
-    <tspan class="node-text" x="985" y="696">torch tensor / storage / autograd</tspan>
-    <tspan class="node-text" x="985" y="720">torch_npu backend / current stream</tspan>
+    <tspan class="node-title" x="985" y="665">目标环境框架能力</tspan>
+    <tspan class="node-text" x="985" y="688">torch tensor / storage / autograd</tspan>
+    <tspan class="node-text" x="985" y="711">Ascend PyTorch NPU 运行时能力</tspan>
+    <tspan class="node-text" x="985" y="731">通常由 torch_npu 提供</tspan>
   </text>
   <rect class="box" x="710" y="775" width="550" height="90" fill="#EAF7ED" stroke="#4C9B60" stroke-width="2.5"/>
   <text text-anchor="middle" x="985">

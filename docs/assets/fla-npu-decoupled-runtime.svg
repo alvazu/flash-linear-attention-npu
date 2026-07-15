@@ -74,7 +74,7 @@
   <rect class="box" x="410" y="155" width="460" height="85" fill="#F2FAF4" stroke="#4C9B60"/>
   <text text-anchor="middle" x="640">
     <tspan class="node-title" x="640" y="185">用户代码或外部 executor</tspan>
-    <tspan class="node-text" x="640" y="215">先设置当前 NPU stream</tspan>
+    <tspan class="node-text" x="640" y="215">设置目标 device 的 current stream</tspan>
   </text>
   <rect class="box" x="410" y="285" width="460" height="80" fill="#F2FAF4" stroke="#4C9B60"/>
   <text text-anchor="middle" x="640">
@@ -89,8 +89,8 @@
   <rect class="box" x="410" y="555" width="460" height="120" fill="#FFF8E7" stroke="#D9970B"/>
   <text text-anchor="middle" x="640">
     <tspan class="node-title" x="640" y="582">_runtime.py</tspan>
-    <tspan class="node-text" x="640" y="608">构造 ACL tensor descriptor</tspan>
-    <tspan class="node-text" x="640" y="633">获取 current_stream_ptr()</tspan>
+    <tspan class="node-text" x="640" y="608">同 device 校验 + NPU device guard</tspan>
+    <tspan class="node-text" x="640" y="633">构造 descriptor + 获取目标 current stream</tspan>
     <tspan class="node-text" x="640" y="658">管理 workspace 与异步对象保活</tspan>
   </text>
   <rect class="box" x="410" y="725" width="460" height="85" fill="#FFF8E7" stroke="#D9970B"/>

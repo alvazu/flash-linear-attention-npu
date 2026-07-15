@@ -81,9 +81,10 @@
     <tspan class="stage-title" x="1335" y="184">5  首次算子调用</tspan>
     <tspan class="section" x="1235" y="230" text-anchor="start">本阶段确定</tspan>
     <tspan class="body" x="1235" y="267" text-anchor="start">• torch tensor / storage API</tspan>
-    <tspan class="body" x="1235" y="302" text-anchor="start">• torch_npu backend 能力</tspan>
-    <tspan class="body" x="1235" y="337" text-anchor="start">• current NPU stream</tspan>
-    <tspan class="body" x="1235" y="372" text-anchor="start">• 当前算子的 aclnn 符号</tspan>
+    <tspan class="body" x="1235" y="302" text-anchor="start">• Ascend PyTorch NPU 运行时能力</tspan>
+    <tspan class="body" x="1235" y="337" text-anchor="start">• 通常由 torch_npu 提供</tspan>
+    <tspan class="body" x="1235" y="372" text-anchor="start">• device guard / target stream</tspan>
+    <tspan class="body" x="1235" y="407" text-anchor="start">• 当前算子的 aclnn 符号</tspan>
   </text>
 
   <rect class="box" x="30" y="575" width="545" height="120" fill="#EEF4FF" stroke="#5B7DB1"/>
@@ -95,8 +96,8 @@
   <rect class="box" x="620" y="575" width="840" height="120" fill="#F4F0FF" stroke="#8266B5"/>
   <text x="1040" text-anchor="middle">
     <tspan class="summary-title" x="1040" y="608" fill="#49366B">目标环境运行时确定</tspan>
-    <tspan class="summary" x="1040" y="638">Python × torch tensor API × torch_npu backend / stream × Triton</tspan>
-    <tspan class="summary" x="1040" y="666">fla_npu 通过能力契约适配，不按框架 patch 绑定</tspan>
+    <tspan class="summary" x="1040" y="638">Python × torch tensor API × Ascend PyTorch NPU 运行时 × Triton</tspan>
+    <tspan class="summary" x="1040" y="666">NPU 运行时能力通常由 torch_npu 提供；fla_npu 按能力适配</tspan>
   </text>
 
   <g><rect x="397" y="716" width="105" height="20" fill="#fff"/><text class="edge-label" x="449.5" y="731" text-anchor="middle" fill="#244B2F">构建侧证据</text></g>
