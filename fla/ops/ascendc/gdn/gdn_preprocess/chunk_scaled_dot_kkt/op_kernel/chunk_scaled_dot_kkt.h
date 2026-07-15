@@ -31,10 +31,14 @@ public:
     __aicore__ inline void Init(GM_ADDR k,
                                 GM_ADDR g,
                                 GM_ADDR beta,
+                                GM_ADDR cuSeqlens,
+                                GM_ADDR chunkIndices,
                                 GM_ADDR a,
                                 GM_ADDR scoreWorkspace,
                                 uint64_t b,
-                                uint64_t h,
+                                uint64_t hk,
+                                uint64_t hv,
+                                uint64_t hvPerHk,
                                 uint64_t t,
                                 uint64_t kDim,
                                 uint64_t bt,
@@ -43,11 +47,14 @@ public:
                                 uint64_t usedAicNum,
                                 uint64_t usedAivNum,
                                 uint64_t btAlign,
+                                uint64_t isVarlen,
                                 TPipe *pipe)
     {
         pipe_ = pipe;
         B_ = static_cast<int64_t>(b);
-        H_ = static_cast<int64_t>(h);
+        Hk_ = static_cast<int64_t>(hk);
+        Hv_ = static_cast<int64_t>(hv);
+        hvPerHk_ = static_cast<int64_t>(hvPerHk);
         T_ = static_cast<int64_t>(t);
         K_ = static_cast<int64_t>(kDim);
         BT_ = static_cast<int64_t>(bt);
@@ -56,12 +63,17 @@ public:
         usedAicNum_ = static_cast<int64_t>(usedAicNum);
         usedAivNum_ = static_cast<int64_t>(usedAivNum);
         btAlign_ = static_cast<int64_t>(btAlign);
+        isVarlen_ = static_cast<int64_t>(isVarlen);
 
-        kGm.SetGlobalBuffer((__gm__ KType *)k, B_ * H_ * T_ * K_);
-        gGm.SetGlobalBuffer((__gm__ float *)g, B_ * H_ * T_);
-        betaGm.SetGlobalBuffer((__gm__ float *)beta, B_ * H_ * T_);
-        aGm.SetGlobalBuffer((__gm__ float *)a, B_ * T_ * H_ * BT_);
+        kGm.SetGlobalBuffer((__gm__ KType *)k, B_ * Hk_ * T_ * K_);
+        gGm.SetGlobalBuffer((__gm__ float *)g, B_ * Hv_ * T_);
+        betaGm.SetGlobalBuffer((__gm__ float *)beta, B_ * Hv_ * T_);
+        aGm.SetGlobalBuffer((__gm__ float *)a, B_ * Hk_ * T_ * BT_);
         scoreGm.SetGlobalBuffer((__gm__ float *)scoreWorkspace, taskNum_ * BT_ * BT_);
+        if (isVarlen_ != 0) {
+            cuSeqlensGm.SetGlobalBuffer((__gm__ int64_t *)cuSeqlens);
+            chunkIndicesGm.SetGlobalBuffer((__gm__ int64_t *)chunkIndices, NT_ * 2);
+        }
 
         if ASCEND_IS_AIV {
             pipe_->InitBuffer(gQueue_, BUFFER_NUM, btAlign_ * sizeof(float));
@@ -97,10 +109,21 @@ private:
                                       int64_t &valid) const
     {
         chunk = task % NT_;
-        h = (task / NT_) % H_;
-        b = task / (H_ * NT_);
-        rowStart = chunk * BT_;
-        valid = MinI64(BT_, T_ - rowStart);
+        h = (task / NT_) % Hk_;
+        b = task / (Hk_ * NT_);
+        if (isVarlen_ != 0) {
+            const int64_t seqId = chunkIndicesGm.GetValue(chunk * 2);
+            const int64_t localChunk = chunkIndicesGm.GetValue(chunk * 2 + 1);
+            const int64_t bos = cuSeqlensGm.GetValue(seqId);
+            const int64_t eos = cuSeqlensGm.GetValue(seqId + 1);
+            chunk = localChunk;
+            rowStart = bos + localChunk * BT_;
+            valid = MinI64(BT_, eos - rowStart);
+            valid = MinI64(valid, T_ - rowStart);
+        } else {
+            rowStart = chunk * BT_;
+            valid = MinI64(BT_, T_ - rowStart);
+        }
         if (valid < 0) {
             valid = 0;
         }
@@ -118,7 +141,8 @@ private:
             return;
         }
 
-        const int64_t kOffset = ((b * H_ + h) * T_ + rowStart) * K_;
+        const int64_t hk = h;
+        const int64_t kOffset = ((b * Hk_ + hk) * T_ + rowStart) * K_;
         const int64_t scoreOffset = task * BT_ * BT_;
         scoreMatmul.SetOrgShape(static_cast<int32_t>(BT_), static_cast<int32_t>(BT_), static_cast<int32_t>(K_));
         scoreMatmul.SetSingleShape(static_cast<int32_t>(valid), static_cast<int32_t>(valid), static_cast<int32_t>(K_));
@@ -142,14 +166,14 @@ private:
             return;
         }
 
-        const int64_t ghOffset = (b * H_ + h) * T_ + rowStart;
+        const int64_t ghOffset = (b * Hv_ + h) * T_ + rowStart;
         CopyTaskVector(gGm, ghOffset, gQueue_, valid);
         CopyTaskVector(betaGm, ghOffset, betaQueue_, valid);
         LocalTensor<float> gLocal = gQueue_.template DeQue<float>();
         LocalTensor<float> betaLocal = betaQueue_.template DeQue<float>();
 
         const int64_t scoreBaseOffset = task * BT_ * BT_;
-        const int64_t outBaseOffset = ((b * H_ + h) * T_ + rowStart) * BT_;
+        const int64_t outBaseOffset = ((b * Hk_ + h) * T_ + rowStart) * BT_;
         const int64_t outRowStride = BT_;
         LocalTensor<float> scoreTileLocal = scoreTileBuf_.Get<float>();
         LocalTensor<float> outTileLocal = outTileBuf_.Get<float>();
@@ -323,9 +347,13 @@ private:
     GlobalTensor<float> betaGm;
     GlobalTensor<float> aGm;
     GlobalTensor<float> scoreGm;
+    GlobalTensor<int64_t> cuSeqlensGm;
+    GlobalTensor<int64_t> chunkIndicesGm;
 
     int64_t B_ = 0;
-    int64_t H_ = 0;
+    int64_t Hk_ = 0;
+    int64_t Hv_ = 0;
+    int64_t hvPerHk_ = 1;
     int64_t T_ = 0;
     int64_t K_ = 0;
     int64_t BT_ = 0;
@@ -334,6 +362,7 @@ private:
     int64_t usedAicNum_ = 0;
     int64_t usedAivNum_ = 0;
     int64_t btAlign_ = 0;
+    int64_t isVarlen_ = 0;
 };
 }  // namespace NsChunkScaledDotKkt
 

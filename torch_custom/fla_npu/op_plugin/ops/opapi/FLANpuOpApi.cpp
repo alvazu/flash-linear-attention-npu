@@ -348,11 +348,13 @@ at::Tensor npu_chunk_scaled_dot_kkt(
     const at::Tensor &k,
     const at::Tensor &g,
     const at::Tensor &beta,
+    at::OptionalIntArrayRef cu_seqlens,
+    at::OptionalIntArrayRef chunk_indices,
     int64_t chunk_size)
 {
-    TORCH_CHECK(k.dim() == 4, "npu_chunk_scaled_dot_kkt: k must be [B,H,T,K], got ", k.sizes());
-    TORCH_CHECK(g.dim() == 3, "npu_chunk_scaled_dot_kkt: g must be [B,H,T], got ", g.sizes());
-    TORCH_CHECK(beta.dim() == 3, "npu_chunk_scaled_dot_kkt: beta must be [B,H,T], got ", beta.sizes());
+    TORCH_CHECK(k.dim() == 4, "npu_chunk_scaled_dot_kkt: k must be [B,Hk,T,K], got ", k.sizes());
+    TORCH_CHECK(g.dim() == 3, "npu_chunk_scaled_dot_kkt: g must be [B,Hv,T], got ", g.sizes());
+    TORCH_CHECK(beta.dim() == 3, "npu_chunk_scaled_dot_kkt: beta must be [B,Hv,T], got ", beta.sizes());
     TORCH_CHECK(
         k.scalar_type() == c10::ScalarType::Half || k.scalar_type() == c10::ScalarType::BFloat16,
         "npu_chunk_scaled_dot_kkt: k dtype must be float16 or bfloat16, got ", k.scalar_type());
@@ -363,25 +365,41 @@ at::Tensor npu_chunk_scaled_dot_kkt(
     TORCH_CHECK(
         chunk_size == 16 || chunk_size == 32 || chunk_size == 64 || chunk_size == 128,
         "npu_chunk_scaled_dot_kkt: chunk_size must be one of 16, 32, 64, 128, got ", chunk_size);
+    TORCH_CHECK(
+        cu_seqlens.has_value() == chunk_indices.has_value(),
+        "npu_chunk_scaled_dot_kkt: cu_seqlens and chunk_indices must be both provided or both omitted.");
+    if (cu_seqlens.has_value()) {
+        const auto cu = cu_seqlens.value();
+        const auto chunks = chunk_indices.value();
+        TORCH_CHECK(cu.size() >= 2,
+            "npu_chunk_scaled_dot_kkt: cu_seqlens must have at least 2 elements, got ", cu.size());
+        TORCH_CHECK(chunks.size() > 0 && chunks.size() % 2 == 0,
+            "npu_chunk_scaled_dot_kkt: chunk_indices must be a non-empty flat [seq, chunk] list, got ",
+            chunks.size(), " elements.");
+    }
 
     const int64_t B = k.size(0);
-    const int64_t H = k.size(1);
+    const int64_t Hk = k.size(1);
     const int64_t T = k.size(2);
+    const int64_t Hv = g.size(1);
     TORCH_CHECK(
-        g.size(0) == B && g.size(1) == H && g.size(2) == T,
-        "npu_chunk_scaled_dot_kkt: g must match k prefix [B,H,T]; k=", k.sizes(), " g=", g.sizes());
+        g.size(0) == B && g.size(2) == T,
+        "npu_chunk_scaled_dot_kkt: g must match k B/T and provide value heads [B,Hv,T]; k=", k.sizes(), " g=", g.sizes());
     TORCH_CHECK(
-        beta.size(0) == B && beta.size(1) == H && beta.size(2) == T,
-        "npu_chunk_scaled_dot_kkt: beta must match k prefix [B,H,T]; k=", k.sizes(), " beta=", beta.sizes());
+        beta.size(0) == B && beta.size(1) == Hv && beta.size(2) == T,
+        "npu_chunk_scaled_dot_kkt: beta must match g as [B,Hv,T]; g=", g.sizes(), " beta=", beta.sizes());
+    TORCH_CHECK(
+        Hk > 0 && Hv > 0 && Hv % Hk == 0,
+        "npu_chunk_scaled_dot_kkt: GVA requires Hv divisible by Hk; Hk=", Hk, " Hv=", Hv);
 
     at::Tensor k_contig = k.contiguous();
     at::Tensor g_contig = g.contiguous();
     at::Tensor beta_contig = beta.contiguous();
-    at::Tensor A = at::empty({B, H, T, chunk_size}, k.options().dtype(c10::ScalarType::Float));
+    at::Tensor A = at::empty({B, Hk, T, chunk_size}, k.options().dtype(c10::ScalarType::Float));
 
     EXEC_NPU_CMD_EXT(
         aclnnChunkScaledDotKkt,
-        k_contig, g_contig, beta_contig, chunk_size,
+        k_contig, g_contig, beta_contig, cu_seqlens, chunk_indices, chunk_size,
         A
     );
     return A;
