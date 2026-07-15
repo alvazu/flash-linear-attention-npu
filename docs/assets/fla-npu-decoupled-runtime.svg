@@ -67,8 +67,7 @@
   <text text-anchor="middle" x="180">
     <tspan class="node-title" x="180" y="339">site-packages/fla_npu/opp</tspan>
     <tspan class="node-text" x="180" y="367">vendors/fla_npu_transformer</tspan>
-    <tspan class="node-text" x="180" y="393">op_api / op_host / tiling / proto</tspan>
-    <tspan class="node-text" x="180" y="419">SOC kernel</tspan>
+    <tspan class="node-text" x="180" y="393">完整算子交付件</tspan>
   </text>
 
   <!-- Main call-chain nodes -->

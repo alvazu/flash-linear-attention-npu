@@ -21,7 +21,7 @@
   </defs>
   <rect width="1500" height="930" fill="#FFFFFF"/>
   <text x="750" y="55" text-anchor="middle" font-size="25" font-weight="700">新架构的依赖在什么时候确定</text>
-  <text x="750" y="92" text-anchor="middle" font-size="15" fill="#52606D">框架版本留在目标环境；CANN、SOC、host 二进制留在构建产物</text>
+  <text x="750" y="92" text-anchor="middle" font-size="15" fill="#52606D">构建时不冻结框架 ABI；安装和首次调用逐步确定目标环境能力</text>
 
   <!-- Arrows are rendered behind nodes and stay entirely in the whitespace between boxes. -->
   <path class="edge" d="M280 325 H325" stroke="#52606D" marker-end="url(#arrow-gray)"/>
@@ -38,22 +38,22 @@
 
   <rect class="box" x="30" y="150" width="250" height="350" fill="#EEF4FF" stroke="#5B7DB1"/>
   <text x="155" text-anchor="middle">
-    <tspan class="stage-title" x="155" y="184">1  OPP 构建</tspan>
-    <tspan class="section" x="55" y="230" text-anchor="start">本阶段确定</tspan>
-    <tspan class="body" x="55" y="267" text-anchor="start">• CANN 编译接口与工具链</tspan>
-    <tspan class="body" x="55" y="302" text-anchor="start">• 目标 SOC</tspan>
-    <tspan class="body" x="55" y="337" text-anchor="start">• host 架构</tspan>
-    <tspan class="body" x="55" y="372" text-anchor="start">• gcc / libstdc++ 基线</tspan>
+    <tspan class="stage-title" x="155" y="184">1  默认 wheel 构建</tspan>
+    <tspan class="section" x="55" y="230" text-anchor="start">本阶段不固定</tspan>
+    <tspan class="body" x="55" y="267" text-anchor="start">• 目标 torch minor</tspan>
+    <tspan class="body" x="55" y="302" text-anchor="start">• 目标 torch_npu patch</tspan>
+    <tspan class="body" x="55" y="337" text-anchor="start">• CPython minor ABI</tspan>
+    <tspan class="body" x="55" y="372" text-anchor="start">• torch cxx11abi</tspan>
   </text>
 
   <rect class="box" x="325" y="150" width="250" height="350" fill="#EEF4FF" stroke="#5B7DB1"/>
   <text x="450" text-anchor="middle">
     <tspan class="stage-title" x="450" y="184">2  wheel 组装</tspan>
-    <tspan class="section" x="350" y="230" text-anchor="start">本阶段确定</tspan>
+    <tspan class="section" x="350" y="230" text-anchor="start">本阶段固定</tspan>
     <tspan class="body" x="350" y="267" text-anchor="start">• 公开版本与源码标识</tspan>
-    <tspan class="body" x="350" y="302" text-anchor="start">• SOC.host build tag</tspan>
-    <tspan class="body" x="350" y="337" text-anchor="start">• Python wrapper 内容</tspan>
-    <tspan class="body" x="350" y="372" text-anchor="start">• 完整 OPP vendor 树</tspan>
+    <tspan class="body" x="350" y="302" text-anchor="start">• Python wrapper 内容</tspan>
+    <tspan class="body" x="350" y="337" text-anchor="start">• 完整 OPP vendor 树</tspan>
+    <tspan class="body" x="350" y="372" text-anchor="start">• 默认不含 legacy 扩展</tspan>
   </text>
 
   <rect class="box" x="620" y="150" width="250" height="350" fill="#EFF9F1" stroke="#4C9B60"/>
@@ -68,43 +68,43 @@
 
   <rect class="box" x="915" y="150" width="250" height="350" fill="#FFF7E8" stroke="#D9970B"/>
   <text x="1040" text-anchor="middle">
-    <tspan class="stage-title" x="1040" y="184">4  import / dlopen</tspan>
+    <tspan class="stage-title" x="1040" y="184">4  import / 符号加载</tspan>
     <tspan class="section" x="940" y="230" text-anchor="start">本阶段确定</tspan>
-    <tspan class="body" x="940" y="267" text-anchor="start">• 实际 CANN runtime</tspan>
-    <tspan class="body" x="940" y="302" text-anchor="start">• 实际 OPP vendor 路径</tspan>
-    <tspan class="body" x="940" y="337" text-anchor="start">• libcust_opapi.so</tspan>
-    <tspan class="body" x="940" y="372" text-anchor="start">• ELF 依赖与动态符号</tspan>
+    <tspan class="body" x="940" y="267" text-anchor="start">• 实际 OPP vendor 路径</tspan>
+    <tspan class="body" x="940" y="302" text-anchor="start">• libcust_opapi.so</tspan>
+    <tspan class="body" x="940" y="337" text-anchor="start">• 必需 aclnn 动态符号</tspan>
+    <tspan class="body" x="940" y="372" text-anchor="start">• 不主动 import torch_npu</tspan>
   </text>
 
   <rect class="box" x="1210" y="150" width="250" height="350" fill="#F4F0FF" stroke="#8266B5"/>
   <text x="1335" text-anchor="middle">
     <tspan class="stage-title" x="1335" y="184">5  首次算子调用</tspan>
     <tspan class="section" x="1235" y="230" text-anchor="start">本阶段确定</tspan>
-    <tspan class="body" x="1235" y="267" text-anchor="start">• 当前 torch tensor API</tspan>
-    <tspan class="body" x="1235" y="302" text-anchor="start">• NPU tensor 元数据</tspan>
+    <tspan class="body" x="1235" y="267" text-anchor="start">• torch tensor / storage API</tspan>
+    <tspan class="body" x="1235" y="302" text-anchor="start">• torch_npu backend 能力</tspan>
     <tspan class="body" x="1235" y="337" text-anchor="start">• current NPU stream</tspan>
     <tspan class="body" x="1235" y="372" text-anchor="start">• 当前算子的 aclnn 符号</tspan>
   </text>
 
   <rect class="box" x="30" y="575" width="545" height="120" fill="#EEF4FF" stroke="#5B7DB1"/>
   <text x="302.5" text-anchor="middle">
-    <tspan class="summary-title" x="302.5" y="608" fill="#24466F">构建产物已经固定</tspan>
-    <tspan class="summary" x="302.5" y="638">CANN 编译接口 × SOC kernel × host ELF × 工具链基线</tspan>
-    <tspan class="summary" x="302.5" y="666">这些依赖不能因 py3-none-any 命名而被忽略</tspan>
+    <tspan class="summary-title" x="302.5" y="608" fill="#24466F">构建时未冻结框架 ABI</tspan>
+    <tspan class="summary" x="302.5" y="638">不读取 torch / torch_npu 头文件、生成代码或 dispatcher</tspan>
+    <tspan class="summary" x="302.5" y="666">不生成 CPython / PyTorch C++ 扩展</tspan>
   </text>
   <rect class="box" x="620" y="575" width="840" height="120" fill="#F4F0FF" stroke="#8266B5"/>
   <text x="1040" text-anchor="middle">
     <tspan class="summary-title" x="1040" y="608" fill="#49366B">目标环境运行时确定</tspan>
-    <tspan class="summary" x="1040" y="638">Python × torch × torch_npu 后端 × Triton × CANN runtime</tspan>
-    <tspan class="summary" x="1040" y="666">fla_npu 不冻结框架 ABI，但要求当前环境提供所需能力</tspan>
+    <tspan class="summary" x="1040" y="638">Python × torch tensor API × torch_npu backend / stream × Triton</tspan>
+    <tspan class="summary" x="1040" y="666">fla_npu 通过能力契约适配，不按框架 patch 绑定</tspan>
   </text>
 
   <g><rect x="397" y="716" width="105" height="20" fill="#fff"/><text class="edge-label" x="449.5" y="731" text-anchor="middle" fill="#244B2F">构建侧证据</text></g>
   <g><rect x="1000" y="716" width="105" height="20" fill="#fff"/><text class="edge-label" x="1052.5" y="731" text-anchor="middle" fill="#244B2F">运行侧证据</text></g>
   <rect class="box" x="180" y="765" width="1140" height="120" fill="#E9F7EE" stroke="#4C9B60" stroke-width="2.5"/>
   <text x="750" text-anchor="middle">
-    <tspan x="750" y="800" font-size="18" font-weight="700" fill="#244B2F">CI / 发布矩阵给出真实兼容范围</tspan>
-    <tspan x="750" y="833" font-size="16" fill="#244B2F">验证 import、动态符号、stream、单算子精度和端到端 Example/ST</tspan>
-    <tspan x="750" y="863" font-size="16" fill="#244B2F">结论是“这些组合经过验证”，不是“pip 已自动保证所有组合”</tspan>
+    <tspan x="750" y="800" font-size="18" font-weight="700" fill="#244B2F">CI / 发布矩阵给出真实框架兼容范围</tspan>
+    <tspan x="750" y="833" font-size="16" fill="#244B2F">逐组验证 Python、torch、torch_npu 的 tensor、stream、autograd、精度和 Example/ST</tspan>
+    <tspan x="750" y="863" font-size="16" fill="#244B2F">结论是“这些组合经过验证”，不是“py3-none-any 自动保证所有组合”</tspan>
   </text>
 </svg>

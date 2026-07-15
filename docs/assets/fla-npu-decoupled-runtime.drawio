@@ -23,7 +23,7 @@
         <mxCell id="wheel" value="&lt;b&gt;py3-none-any wheel&lt;/b&gt;&lt;br/&gt;Python wrapper + 内嵌 OPP&lt;br/&gt;不携带 cp / cxx11abi tag" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#F4F8FF;strokeColor=#5B7DB1;strokeWidth=2;fontSize=15;fontColor=#172033;spacing=8;" vertex="1" parent="1">
           <mxGeometry x="50" y="155" width="260" height="100" as="geometry"/>
         </mxCell>
-        <mxCell id="opp" value="&lt;b&gt;site-packages/fla_npu/opp&lt;/b&gt;&lt;br/&gt;vendors/fla_npu_transformer&lt;br/&gt;op_api / op_host / tiling / proto&lt;br/&gt;SOC kernel" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#F4F8FF;strokeColor=#5B7DB1;strokeWidth=2;fontSize=15;fontColor=#172033;spacing=8;" vertex="1" parent="1">
+        <mxCell id="opp" value="&lt;b&gt;site-packages/fla_npu/opp&lt;/b&gt;&lt;br/&gt;vendors/fla_npu_transformer&lt;br/&gt;完整算子交付件" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#F4F8FF;strokeColor=#5B7DB1;strokeWidth=2;fontSize=15;fontColor=#172033;spacing=8;" vertex="1" parent="1">
           <mxGeometry x="50" y="310" width="260" height="140" as="geometry"/>
         </mxCell>
 

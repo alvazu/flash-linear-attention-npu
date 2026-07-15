@@ -21,7 +21,7 @@ SVG 见 [`../assets/fla-npu-abi-contracts.svg`](../assets/fla-npu-abi-contracts.
 
 - 默认 Python 入口是 `from fla_npu.ops.ascendc import 算子名`。
 - 默认 Ascend C 调用链通过 Python `ctypes` 直调 `aclnn*` 符号，不经过 `torch.ops.npu` dispatcher。
-- 默认 wheel 使用 `py3-none-any` 作为 Python compatibility tag，不编译 PyTorch C++ extension，因此不绑定 `cp39/cp310/cp311/cp312`、torch 的 `cxx11abi` 或某个 torch minor 版本；内嵌 OPP 仍按 SOC 和 host 架构分别构建。
+- 默认 wheel 使用 `py3-none-any` 作为 Python compatibility tag，不编译 PyTorch C++ extension，因此不绑定 `cp39/cp310/cp311/cp312`、torch 的 `cxx11abi` 或某个 torch minor 版本。
 - wheel 内嵌 OPP vendor 树，安装后只要加载 CANN 环境并进入 Python 环境即可调用默认 `fla_npu.ops.ascendc`。
 - Triton 算子入口保持 `from fla_npu.ops.triton import 算子名`，打包时映射根目录 `fla/ops/triton/triton_core`，源码只保留一份。
 - legacy `torch.ops.npu.*` 只作为显式兼容路径保留，不在普通 import 或默认调用时启用。
@@ -40,28 +40,26 @@ SVG 见 [`../assets/fla-npu-abi-contracts.svg`](../assets/fla-npu-abi-contracts.
 | PyTorch C++ ABI | 使用 `torch.utils.cpp_extension.CppExtension`，include/link `libtorch`、ATen、c10 | 绑定构建时 torch minor/patch 的 C++ ABI 和 dispatcher 细节 |
 | torch_npu ABI | include/link `libtorch_npu.so`，注册 `torch.ops.npu.*`，依赖 torch_npu op-plugin 生成代码 | 绑定构建时 torch_npu 版本、修复补丁和算子注册机制 |
 | C++ 标准库 ABI | C++ extension 编译时受 `_GLIBCXX_USE_CXX11_ABI`、gcc/libstdc++ 影响 | wheel 名或运行时需要区分 `cxx11abi`，跨编译器组合容易加载失败 |
-| 平台二进制 ABI | wheel 内有面向 host 的 ELF，例如 x86_64 或 aarch64 的 Python extension、op_api 动态库 | 即使文件名使用 `py3-none-any`，实际二进制仍必须按 host 架构构建和管理，不能跨架构混用 |
-| CANN/ACL/OPP ABI | 算子二进制、`libcust_opapi.so`、op_host/tiling/kernel 依赖 CANN runtime 和 SOC | 这是 Ascend C 算子的真实运行依赖，不能也不应该伪装成无依赖 |
 
-本仓的解耦设计解决的是前五类里由默认 Python 交付路径引入的绑定。也就是说，默认 `fla_npu.ops.ascendc` 不把 CPython extension、PyTorch C++ extension、torch_npu dispatcher 或 C++ ABI 放进调用链。剩下的 CANN/ACL/OPP/SOC 依赖是硬件运行时依赖，仍然需要通过 CANN 环境、SOC 对应 wheel 和 OPP ABI 兼容性管理。
+本仓的解耦设计针对的就是上面四类由 PyTorch/torch_npu 扩展路径引入的绑定。默认 `fla_npu.ops.ascendc` 不把 CPython extension、PyTorch C++ extension、torch_npu dispatcher 或 C++ ABI 放进调用链。它仍然使用目标环境提供的 torch NPU tensor 和 stream，但这些能力在运行时通过 Python API 读取，不在构建时冻结成某个 torch/torch_npu 版本的 C++ ABI。
 
 ### `custom_aclnn_extension_lib*.so` 的作用
 
-`custom_aclnn_extension_lib*.so` 是旧路径的 **PyTorch dispatcher 桥接库**，不是 Ascend C kernel，也不是提供自定义 `aclnn*` 符号的 `libcust_opapi.so`。仓库通过 `torch.utils.cpp_extension.CppExtension` 将 `torch_npu/csrc/aten` 和 `op_plugin` 中的生成代码、注册代码和参数适配代码编译成这个 host ELF。
+`custom_aclnn_extension_lib*.so` 是旧路径的 **PyTorch dispatcher 桥接库**，不是提供自定义 `aclnn*` 符号的 `libcust_opapi.so`。仓库通过 `torch.utils.cpp_extension.CppExtension` 将 `torch_npu/csrc/aten` 和 `op_plugin` 中的生成代码、注册代码和参数适配代码编译成这个 Python C++ 扩展动态库。
 
 它在旧调用链中承担四项职责：
 
 1. 把 op-plugin / ATen 生成的 schema、dispatcher 注册和参数适配代码编译成可加载模块。
 2. 被 `torch.ops.load_library()` 加载后，向 PyTorch dispatcher 注册 `torch.ops.npu.<op>`。
 3. 接收 dispatcher 传入的 torch tensor、标量和可选属性，按生成代码完成参数适配。
-4. 从 PyTorch 调用层进入自定义 `aclnn` host 发射链路；真正的 `aclnn*GetWorkspaceSize` / `aclnn*` 实现仍由 OPP 中的 `libcust_opapi.so` 提供，kernel 则位于 OPP 的 SOC 二进制目录。
+4. 从 PyTorch 调用层进入自定义 `aclnn` 发射链路；真正的 `aclnn*GetWorkspaceSize` / `aclnn*` 实现仍由 OPP 中的 `libcust_opapi.so` 提供。
 
 因此，这个 `.so` 是多层 ABI 的**汇合点**，但不是把所有依赖静态装在一起的“依赖集合包”：
 
 - op-plugin / ATen 生成的桥接和注册机器码会进入该 `.so`。
-- 编译时使用的 C++ 类型布局、符号修饰、dispatcher schema 和 `_GLIBCXX_USE_CXX11_ABI` 等假设会固化在 ELF 中。
-- `libtorch.so`、`libc10.so`、`libtorch_npu.so` 通常由目标环境动态提供；ELF 主要通过 `DT_NEEDED`、未解析外部符号和 RPATH 等信息声明如何寻找它们。
-- `CppExtension` 产物命名和 wheel 标签通常还会携带 CPython minor 与 host 架构信息。
+- 编译时使用的 C++ 类型布局、符号修饰、dispatcher schema 和 `_GLIBCXX_USE_CXX11_ABI` 等假设会固化在扩展动态库中。
+- `libtorch.so`、`libc10.so`、`libtorch_npu.so` 通常由目标环境动态提供；扩展主要通过 `DT_NEEDED`、未解析外部符号和 RPATH 等信息声明如何寻找它们。
+- `CppExtension` 产物命名和 wheel 标签通常还会携带 CPython minor 信息。
 
 加载时只要其中一层不兼容，就可能出现 wheel tag 不匹配、`undefined symbol`、`GLIBCXX_* not found`、dispatcher schema 注册失败或旧 `torch.ops.npu.*` 不可用。图中从四类 ABI 指向该 `.so` 的箭头表示“编译、链接和注册约定在这里汇合”，并不表示四套动态库都被复制进该文件。
 
@@ -82,7 +80,7 @@ SVG 见 [`../assets/fla-npu-abi-contracts.svg`](../assets/fla-npu-abi-contracts.
 4. 显式调用 `fla_npu.load_legacy_torch_ops()`，内部通过 `torch.ops.load_library()` 加载桥接库并注册 `torch.ops.npu.<op>`。
 5. 用户调用 `torch.ops.npu.<op>`，由桥接库完成 dispatcher 参数适配，再进入 `libcust_opapi.so` 提供的自定义 `aclnn*`。
 
-这条链路的 wheel 必然知道构建时的 Python ABI、torch ABI、torch_npu ABI、gcc/libstdc++ ABI 和 host 架构，因此经常出现“同一个源码要为多个 torch/Python 组合分别编 wheel”的问题。
+这条链路的 wheel 必然知道构建时的 Python ABI、torch ABI、torch_npu ABI 和 gcc/libstdc++ ABI，因此经常出现“同一个源码要为多个 torch/Python 组合分别编 wheel”的问题。
 
 当前默认方案改成：
 
@@ -92,24 +90,24 @@ SVG 见 [`../assets/fla-npu-abi-contracts.svg`](../assets/fla-npu-abi-contracts.
 4. `_runtime.py` 直接调用 `aclnn*GetWorkspaceSize` 和 `aclnn*`。
 5. 高层 autograd 用 `torch.autograd.Function` 绑定 forward/backward，不注册 torch_npu dispatcher。
 
-这样 wheel 不再需要 PyTorch C++ extension，所以 Python compatibility tag 可以保持 `py3-none-any`。这不表示 wheel 内的 OPP 二进制可以跨 SOC 或 host 架构；它表示同一个 SOC/host wheel 可以在 torch Python API、CANN/ACL 和系统动态库均兼容时，跨多个 torch、torch_npu、Python minor 和 gcc 组合验证。
+这样 wheel 不再需要 PyTorch C++ extension，所以 Python compatibility tag 可以保持 `py3-none-any`。同一个 wheel 不再因 torch/torch_npu/Python minor/gcc 组合变化而强制重编；是否支持某个框架组合，改由运行时能力探测和真实测试矩阵证明。
 
 ## 还会保留哪些依赖
 
-解耦不是“没有任何依赖”，而是把不该出现在默认 Python wheel 里的 ABI 依赖移走。仍需保留或关注的依赖包括：
+解耦不是“没有任何依赖”，而是把框架依赖从构建期 C++ ABI 绑定改成目标环境的 Python 能力契约。仍需关注的依赖包括：
 
-- **CANN 环境**：运行前需要 source CANN `set_env.sh`，提供 ACL runtime、OPP 基础路径和设备运行环境。
-- **SOC 和架构**：A2、A3、A5 的 kernel binary 不同；aarch64 和 x86_64 host 产物也需要分别构建。
-- **aclnn ABI**：`_aclnn_ctypes.py` 的参数顺序、类型和输出分配必须和 `aclnn_*.h` 保持一致。
-- **torch Python tensor API**：默认 wrapper 使用 torch tensor 的 `data_ptr()`、storage、shape、stride、dtype、device 和 `torch.npu.current_stream()`。
+- **torch Python tensor API**：默认 wrapper 使用 torch tensor 的 data pointer、storage、shape、stride、dtype 和 device。
+- **torch_npu 后端能力**：目标环境必须已经能创建和执行 NPU tensor，并通过 `torch.npu.current_stream()` 暴露当前 stream；fla_npu 不负责修复本身不配套的 torch/torch_npu 组合。
+- **aclnn 符号契约**：`_aclnn_ctypes.py` 的参数顺序、类型和输出分配必须和 `aclnn_*.h` 保持一致。
 - **可选 torch_npu format 读取**：如果宿主进程已经加载 `torch_npu`，runtime 可以复用 `torch_npu.get_npu_format()` 读取真实 ACL format；这不是默认 import 依赖。
+- **Triton Python/JIT 能力**：Triton 路径由目标环境提供对应 Python API、backend 和 JIT 能力，与 Ascend C ctypes 路径分层维护。
 - **legacy 兼容路径**：只有显式 `fla_npu.load_legacy_torch_ops()` 时才重新引入 torch_npu、PyTorch C++ extension 和 dispatcher 依赖。
 
 ## 依赖在什么阶段确定
 
 新架构不是“没有依赖”，而是把不同依赖放回应该负责它们的阶段：
 
-> Python、torch、torch_npu 和 Triton 由目标 Python 环境在运行时提供；CANN 编译接口、SOC、host 架构和 OPP host 二进制仍由构建环境决定。
+> Python、torch、torch_npu 和 Triton 由目标 Python 环境在运行时提供；默认 wheel 构建不读取并冻结这些框架的 C++ ABI。
 
 ![新架构依赖确定阶段](../assets/fla-npu-dependency-lifecycle.svg)
 
@@ -117,69 +115,69 @@ SVG 见 [`../assets/fla-npu-abi-contracts.svg`](../assets/fla-npu-abi-contracts.
 
 | 阶段 | 此时确定或读取的依赖 | 已有检查 | 不在此阶段确定的内容 |
 | --- | --- | --- | --- |
-| OPP 构建 | CANN 头文件和编译工具链、`FLA_NPU_SOC`、host 架构、gcc/libstdc++ 基线 | 要求已 source CANN；`build.sh --soc=...` 生成对应 op_api、op_host、tiling 和 kernel | 默认路径不读取 torch、torch_npu、torchnpugen 或 PyTorch C++ ABI |
-| wheel 组装 | 包版本、分支或 commit 标识、SOC/host build tag、内嵌 OPP vendor 树 | 检查 `libcust_opapi.so` 和 OPP 关键目录完整；默认清理 legacy extension | 不锁定目标环境的 torch、torch_npu、Python minor 或 Triton 版本 |
-| pip 安装 | 当前 Python 是否满足 `python_requires >= 3.9`，以及普通 Python 依赖 | pip 会拒绝低于最低 Python 版本的环境 | `py3-none-any` 不会让 pip 自动检查 build tag 中的 SOC 和 host 架构，也不会检查 CANN |
-| import / 动态加载 | CANN 环境是否初始化、实际采用的 OPP root、`libcust_opapi.so` 及其 ELF 依赖 | 默认优先 wheel 内嵌 OPP；使用绝对路径和 `RTLD_NOW` 加载，缺库、错误架构和缺失动态符号会立即失败 | 尚未执行具体算子，不代表每个 aclnn 签名和 kernel 都已经验证 |
+| wheel 构建与组装 | 包版本、分支或 commit 标识、Python wrapper 和内嵌 OPP vendor 树 | 检查 `libcust_opapi.so` 和 OPP 关键目录完整；默认清理 legacy extension | 不读取或锁定目标环境的 torch、torch_npu、Python minor、C++ ABI 或 Triton 版本 |
+| pip 安装 | 当前 Python 是否满足 `python_requires >= 3.9`，以及普通 Python 依赖 | pip 会拒绝低于最低 Python 版本的环境 | `py3-none-any` 不会让 pip 自动检查 torch 与 torch_npu 是否配套，也不会验证 NPU backend 能力 |
+| import / 符号加载 | 实际采用的 OPP root、`libcust_opapi.so` 和必需动态符号 | 默认优先 wheel 内嵌 OPP；使用绝对路径和 `RTLD_NOW` 加载，缺库或缺失动态符号会立即失败 | 普通 import 不主动 import `torch_npu`，也尚未验证具体 tensor/stream 能力 |
 | 首次 Ascend C 调用 | 当前 torch Python API、NPU tensor、dtype、storage、shape/stride、当前 NPU stream、可选真实 ACL format | 检查 NPU device 和支持的 dtype；读取 `torch.npu.current_stream()`；检查 ACL descriptor、workspace 和 launch 返回值 | 不要求 wheel 知道构建时 torch/torch_npu 版本 |
+| 首次 autograd | 当前 torch 的 `autograd.Function`、`save_for_backward`、forward/backward tensor 语义 | 由 Python wrapper 绑定正反向算子，并通过梯度测试验证 | 不使用 torch_npu derivatives 生成或 dispatcher autograd 注册 |
 | Triton 调用 | 目标环境实际安装的 Triton Ascend 和 JIT/runtime 能力 | 环境检查脚本可检查最低版本及 A5 特殊最低版本；导入或 JIT 失败会在调用时暴露 | Triton 版本不编入 Ascend C OPP，也不应影响 `fla_npu.ops.ascendc` |
-| CI / 发布验证 | 声明支持的 Python、torch、torch_npu、CANN、SOC 和 host 组合 | 在测试矩阵中验证 import、符号加载、stream、精度和端到端 example | CI 结论是兼容范围证据，不等于 pip 已自动实施这些门禁 |
+| CI / 发布验证 | 声明支持的 Python、torch 和 torch_npu 组合 | 在测试矩阵中验证 import、NPU tensor、stream、autograd、精度和端到端 example | CI 结论是框架兼容范围证据，不等于 pip 已自动实施这些门禁 |
 
-默认一键 wheel 构建时，[`setup.py`](../../setup.py) 会对 Python 和 CANN 构建环境做检查，但在未启用 `FLA_NPU_BUILD_LEGACY_EXTENSION=1` 时会明确跳过 torch、torch_npu、torchnpugen 和 Triton 的构建时检查。这不是遗漏，而是避免把目标运行环境的框架版本重新冻结进 wheel。
+默认一键 wheel 构建时，[`setup.py`](../../setup.py) 在未启用 `FLA_NPU_BUILD_LEGACY_EXTENSION=1` 时会明确跳过 torch、torch_npu、torchnpugen 和 Triton 的构建时检查。这不是遗漏，而是避免把目标运行环境的框架版本重新冻结进 wheel。
 
 运行环境仍然必须提供一套本身可用的 Ascend PyTorch 后端。`fla_npu` 可以避免额外绑定某个 torch/torch_npu ABI，但不能把一套原本不匹配的 torch 和 torch_npu 组合修复成可用组合。
 
 ### “版本正确”如何保证
 
-新架构里的“版本正确”应理解为**目标环境满足当前调用链需要的接口、符号、SOC 和行为约定**，而不是要求版本字符串与构建机完全相等。保证分为以下几层：
+新架构里的“版本正确”应理解为**目标环境中的 torch/torch_npu 提供当前调用链需要的 Python 接口和运行能力**，而不是要求版本字符串与构建环境完全相等。保证分为以下几层：
 
 1. **安装门禁**：pip 根据 `python_requires` 检查 Python 大版本范围。
-2. **产物身份**：wheel build tag 标识 SOC 和 host 架构；稳定分支、主线 commit 和公开版本用于追溯源码。
-3. **OPP 自洽性**：默认从同一内嵌 vendor 树取得 op_api、op_host、tiling、proto、config 和 kernel，避免从多个安装位置拼接版本。
-4. **动态加载门禁**：`ctypes.CDLL(..., RTLD_NOW)` 在第一次加载时验证 ELF 可加载性、host 架构、依赖库和必需动态符号。
-5. **调用能力检查**：wrapper 检查 NPU tensor、dtype 和 descriptor，runtime 从当前 torch 环境取得 stream，并检查 ACL API 返回值。
-6. **测试矩阵证明**：跨 Python、torch、torch_npu、CANN、SOC 和 host 组合运行单算子、Example/ST 和精度测试，给出发布版本实际支持范围。
+2. **构建解耦门禁**：默认 wheel 不构建或加载 PyTorch C++ extension，不读取 torch/torch_npu 头文件、生成代码或 C++ ABI 配置。
+3. **符号加载门禁**：`ctypes.CDLL(..., RTLD_NOW)` 在第一次加载时验证必需动态库和 `aclnn*` 符号可用。
+4. **tensor 能力检查**：wrapper 检查 NPU tensor、dtype、storage、shape 和 stride 等 Python API。
+5. **backend/stream 能力检查**：runtime 从当前 torch NPU 后端取得 stream；宿主 torch/torch_npu 组合必须能够正常初始化并执行 NPU tensor。
+6. **测试矩阵证明**：跨 Python、torch 和 torch_npu 组合运行 import、单算子、autograd、Example/ST 和精度测试，给出发布版本实际支持范围。
 
 ![兼容性保证、当前缺口与建议闭环](../assets/fla-npu-compatibility-guardrails.svg)
 
 ### 实际需要稳定的底层接口和 ABI 契约
 
-“不链接 PyTorch C++”只移除了其中一类 ABI。默认 Ascend C 调用链仍跨越 Python tensor、ACL descriptor、自定义 aclnn、OPP 注册、tiling 和 kernel 多层边界。不同边界不能统一用“版本号相等”处理：Python 层适合能力探测，C ABI 需要冻结签名，host/kernel 共享结构则必须字节级一致并成套发布。
+“不链接 PyTorch C++”移除了最容易造成包矩阵膨胀的 ABI 汇合点，但默认调用链仍跨越 torch tensor Python API、torch_npu backend/stream、ACL descriptor、自定义 aclnn 和 OPP 符号加载。底层 ACL/aclnn 接口长期相对稳定，本节不展开其版本矩阵，重点说明 torch/torch_npu 在跨版本复用时需要稳定或适配的能力契约。
 
 ![底层接口和跨版本兼容策略](../assets/fla-npu-abi-contracts.svg)
 
 | 边界 | 实际需要保持稳定的接口或数据 | 不一致时可能出现的结果 | 兼容策略 |
 | --- | --- | --- | --- |
-| Python tensor / stream 能力契约 | `device`、`dtype`、`shape`、`stride()`、`storage_offset()`、`element_size()`、storage data pointer，以及 `torch.npu.current_stream().npu_stream` | 属性不存在、storage API 变化、取错 stream，可能在构造 descriptor 前失败，或把 kernel 入队到错误 stream | 按能力探测并集中放在 `_runtime.py` 适配；保留 `untyped_storage()` 到 `storage()` fallback；需要接入其他 executor 时新增统一 stream provider，不锁死 torch patch 版本 |
-| ACL descriptor / runtime C ABI | `aclCreateTensor`、`aclDestroyTensor`、`aclCreateIntArray`、`aclDestroyIntArray` 的函数签名；`aclTensor`、`aclIntArray`、`aclOpExecutor`、`aclrtStream` 的 opaque 生命周期 | 参数宽度或含义变化会导致 descriptor 错误、非法内存访问或错误 stream；跨 runtime 复用 opaque 对象没有兼容保证 | import/preflight 时解析必需符号；签名变化时使用按 CANN ABI 选择的 runtime adapter；descriptor、executor 和 stream 只交给创建它们的同一 runtime 调用链 |
+| torch tensor Python 能力契约 | `device`、`dtype`、`shape`、`stride()`、`storage_offset()`、`element_size()`、storage data pointer 和输出分配 API | 属性不存在、storage API 变化或 storage offset 语义变化，可能在构造 descriptor 前失败或传入错误地址 | 按能力探测并集中放在 `_runtime.py` 适配；保留 `untyped_storage()` 到 `storage()` fallback；不按 torch patch 版本写分支 |
+| torch_npu backend / stream 能力契约 | NPU device 注册、NPU tensor 可执行性、`torch.npu.current_stream()` 和 `npu_stream` 指针 | torch 与 torch_npu 不配套时后端可能无法初始化；stream API 变化可能导致取流失败或错误入队 | 安装后做 backend/stream smoke；stream 读取集中在统一 provider；以功能探针和配套发布族判断，不把 torch_npu 作为 fla_npu 默认 import 依赖 |
+| ACL descriptor / runtime C ABI | `aclCreateTensor`、`aclDestroyTensor`、`aclCreateIntArray`、`aclDestroyIntArray` 的函数签名；`aclTensor`、`aclIntArray`、`aclOpExecutor`、`aclrtStream` 的 opaque 生命周期 | 参数宽度或含义变化会导致 descriptor 错误、非法内存访问或错误 stream；跨 runtime 复用 opaque 对象没有兼容保证 | import 时解析必需符号；descriptor、executor 和 stream 只交给创建它们的同一 runtime 调用链 |
 | 每算子 aclnn C ABI | `aclnnXxxGetWorkspaceSize` 的参数顺序、C 类型、optional/null 语义、属性默认值、输出数量，以及 `aclnnXxx(workspace, size, executor, stream)` 两段式 launch | ctypes 参数错位可能不在加载时失败，而是在调用时产生参数错误、输出错误甚至进程异常 | 已发布同名符号的签名必须冻结；不兼容修改发布新符号或 `V2`；wrapper 根据符号或 compatibility manifest 选择 adapter；CI 对 `aclnn_*.h` 生成 ABI hash 并与 wrapper 声明双向校验 |
-| OPP 注册与加载契约 | vendor 名、算子注册名、`libcust_opapi.so`、op_proto、op_host、tiling/config、动态依赖和 OPP 搜索优先级 | op_api 能加载但找不到 op_host/kernel，或共享库来自新版本而 config/kernel 来自旧版本 | op_api、op_host、tiling、proto、config 和 kernel 必须来自同一 vendor 树；run 包覆盖需要原子替换共享产物并同步更新 manifest；不能把多个版本拼成一棵 OPP |
-| op_host / tiling 到 kernel 的二进制 ABI | `TilingData` 字节布局、字段顺序/宽度/对齐、tiling key、workspace 分区、kernel entry、输入输出和私有 format 语义 | host 按新布局写 tiling buffer、旧 kernel 按旧偏移读取时，可能产生错误结果、越界或 device error | host 和 kernel 成套重编、测试和发布；结构变化增加显式 version/magic 或新 tiling key；禁止只替换 tiling so 而保留不匹配的 kernel binary |
-| SOC kernel / CANN runtime 契约 | 目标 ISA/SOC、kernel binary 格式、依赖的 CANN runtime API、host ELF 与系统动态库基线 | 装错 A2/A3/A5 或 host 架构会加载失败；CANN runtime 能找到符号但行为不兼容时可能在 launch 后失败 | 按 SOC 和 host 架构分 wheel；manifest 记录构建版本与经过验证的 CANN 范围；首次调用前 fail-fast，不为不兼容 SOC 或 runtime 做静默 fallback |
+| PyTorch autograd Python 契约 | `torch.autograd.Function`、`save_for_backward`、forward/backward 输入输出数量、optional tensor 和梯度语义 | API 或保存语义变化可能导致 backward 未绑定、梯度数量不匹配或错误释放上下文 | 正反向绑定集中在 Python 公共入口；对每个框架组合跑 forward/backward 与梯度对比；不依赖 torch_npu derivatives 生成 |
+| OPP 符号加载契约 | vendor 名、算子注册名、`libcust_opapi.so`、必需 `aclnn*` 符号和 OPP 搜索优先级 | 库可加载但目标算子符号缺失，或 run 包覆盖后当前进程仍持有旧符号 | 同一安装树交付并在 import/首次调用时解析必需符号；run 包覆盖后重启 Python 进程 |
 | Triton Python / JIT 能力契约 | `triton` / `triton.language` API、Ascend backend driver、目标设备能力和 JIT 行为 | import、JIT 或 launch 失败，但不应改变 Ascend C OPP 的 ABI 判定 | 独立检查 Triton 最低版本和设备能力，在目标环境做 JIT smoke test；Triton adapter 与 Ascend C ctypes runtime 分层维护 |
 
-其中最需要严格对待的是每算子 aclnn ABI 和 tiling ABI：
+对跨 torch/torch_npu 版本复用最关键的是 tensor/storage、backend/stream 和 autograd 三类 Python 能力；aclnn C ABI 虽然稳定，也必须保证 wrapper 与头文件逐项一致：
 
+- `_runtime.py` 对 torch storage、data pointer 和 stream 的读取应集中维护，不能散落按版本号判断的临时分支。
+- torch 与 torch_npu 必须先组成一套本身可用的 NPU 后端；fla_npu 的“解耦”不能修复二者之间的配套错误。
 - `_aclnn_ctypes.py` 中参数的顺序和 ctypes C 类型必须逐项对应公开 `aclnn_*.h`，不能仅凭 Python 参数名相同推断兼容。
 - `<aclnnOp>GetWorkspaceSize` 返回的 `aclOpExecutor` 只能传给同一套 op_api/runtime 的 `<aclnnOp>`，不能跨版本缓存或复用。
-- `TilingData` 是 op_host 写入、kernel 按固定偏移读取的二进制协议。增删字段、修改 `bool`/整数宽度、对齐或字段顺序都属于 ABI 变化。
 - 当前 runtime 会缓存已加载的 CDLL 和符号，并使用 `RTLD_NODELETE`。run 包覆盖 OPP 后必须重启 Python 进程，不能期待当前进程卸载并切换到新 so。
 
 跨版本变化应按下面的顺序决策：
 
 1. **只有 Python API 形态变化**：增加 capability probe 和 adapter，保持公开 `fla_npu.ops.ascendc` 签名不变。
-2. **新增 C 符号且旧符号仍兼容**：优先探测新符号，缺失时使用旧 adapter。
-3. **同名 aclnn 符号的 C ABI 不兼容**：不得原地修改后继续宣称兼容；发布新符号/版本化 ABI，并让 manifest 明确选择。
-4. **OPP 元数据或 tiling/kernel 协议变化**：整套 OPP 重编和原子替换，不做共享库、config、kernel 的跨版本混装。
-5. **SOC、CANN runtime 或 host ELF 不兼容**：构建独立 wheel 或收紧兼容范围，并在 preflight 阶段拒绝。
+2. **torch_npu backend 或 stream API 变化**：更新统一 backend/stream provider，并用真实 NPU smoke test 验证，不把 torch_npu 改为默认强制 import。
+3. **autograd Python 语义变化**：调整公共入口的 `torch.autograd.Function` adapter，并重跑正反向和梯度测试。
+4. **新增 C 符号且旧符号仍兼容**：优先探测新符号，缺失时使用旧 adapter。
+5. **同名 aclnn 符号的 C ABI 不兼容**：不得原地修改后继续宣称兼容；发布新符号/版本化 ABI，并让 manifest 明确选择。
 6. **算子语义变化**：即使 C 签名未变，也需要新的语义版本、文档和精度测试，不能只依赖符号加载成功作为兼容结论。
 
 ### 当前已经硬检查的内容
 
 - Python 低于 `3.9` 时构建或安装会失败。
-- 未 source CANN 环境时，OPP 构建和首次 Ascend C 调用会失败。
 - wheel 内嵌 OPP 缺少 `libcust_opapi.so` 或关键目录时，打包验证会失败。
-- `libcust_opapi.so` host 架构错误、依赖动态库缺失或必需符号无法解析时，`RTLD_NOW` 加载会失败。
+- `libcust_opapi.so` 依赖动态库缺失或必需符号无法解析时，`RTLD_NOW` 加载会失败。
 - 输入不是 NPU tensor、dtype 不受支持、descriptor 创建失败或 ACL launch 返回错误时，调用会失败。
 - 默认 OPP 搜索顺序使用 wheel 内嵌 vendor；只有显式设置 `FLA_NPU_OPP_PATH` 时，外部 OPP 才会覆盖默认选择。
 
@@ -187,49 +185,48 @@ SVG 见 [`../assets/fla-npu-abi-contracts.svg`](../assets/fla-npu-abi-contracts.
 
 以下内容目前主要依赖用户选择、环境检查脚本和发布测试矩阵，不能写成 pip 已自动保证：
 
-1. SOC 和 host 架构位于 wheel build tag 中，但最终兼容 tag 是 `py3-none-any`；pip 不会根据 build tag 自动拒绝装错 SOC 或架构的文件。
-2. 构建过程能读取并打印 CANN 版本，但当前没有在 import 时强制执行经过发布验证的 CANN 运行版本范围。
-3. `requirements.txt` 不锁定 torch、torch_npu 和 Triton；这有利于跨版本复用，但 pip 不会检查 torch 与 torch_npu 是否属于彼此配套的发布组合。
-4. `scripts/check_npu_env.py` 能检查最低版本、GDN 修复版本、NPU 可用性和 A5 Triton 最低版本，但它目前不是 `pip install` 后自动运行的门禁。
-5. 动态加载可以发现缺失符号，却无法仅凭符号名识别“函数名不变但 aclnn 参数 ABI 已不兼容”的变化；这仍需要 header diff、ABI 测试和真实调用覆盖。
-6. 移除 PyTorch C++ extension 消除了 torch 的 C++ ABI 绑定，但 `libcust_opapi.so` 等 host ELF 仍有 CANN 工具链和系统 libstdc++ 基线，需要发布环境验证。
+1. `requirements.txt` 不锁定 torch、torch_npu 和 Triton；这有利于跨版本复用，但 pip 不会检查 torch 与 torch_npu 是否属于彼此配套的发布组合。
+2. `scripts/check_npu_env.py` 能检查最低版本、GDN 修复版本和 NPU 可用性，但它目前不是 `pip install` 后自动运行的门禁。
+3. 普通 import 不主动 import `torch_npu`，因此只能在首次创建 NPU tensor、读取 stream 或执行算子时确认宿主后端能力。
+4. 动态加载可以发现缺失符号，却无法仅凭符号名识别“函数名不变但 aclnn 参数 ABI 已不兼容”的变化；这仍需要 header diff、ABI 测试和真实调用覆盖。
+5. 移除 PyTorch C++ extension 消除了编译期 ABI 绑定，但 torch Python API、torch_npu backend 和 autograd 行为仍需要跨版本测试，不能仅凭 `py3-none-any` 标签宣称兼容。
 
 ### 推荐的完整兼容性闭环
 
-如果要让错误环境在第一次 kernel enqueue 之前被明确拒绝，推荐在 wheel 内增加机器可读的 `compatibility.json`，并由 runtime 执行一次性 preflight：
+如果要让错误环境在第一次真实算子调用前被明确拒绝，推荐在 wheel 内增加机器可读的 `compatibility.json`，并由 runtime 执行一次性 preflight：
 
 ```json
 {
   "schema_version": 1,
   "package_version": "<public version>",
   "source_commit": "<commit>",
-  "soc": "<ascend910b | ascend910_93 | ascend950>",
-  "host_arch": "<aarch64 | x86_64>",
-  "cann_build_version": "<build version>",
-  "cann_runtime_range": "<release-verified range>",
-  "required_acl_symbols": ["aclCreateTensor", "<aclnn symbols>"]
+  "python_requires": ">=3.9",
+  "tested_torch": ["<release-tested versions>"],
+  "tested_torch_npu": ["<matching release versions>"],
+  "required_torch_capabilities": ["tensor storage API", "torch.autograd.Function"],
+  "required_backend_capabilities": ["NPU tensor", "torch.npu.current_stream"],
+  "required_aclnn_symbols": ["<aclnn symbols>"]
 }
 ```
 
 preflight 应完成以下工作：
 
-- 比较 `platform.machine()` 与 `host_arch`。
-- 从 ACL 或 NPU device 属性读取实际 SOC，并与 wheel 的 `soc` 对比。
-- 读取实际 CANN runtime 版本并检查发布验证范围；A5 额外要求满足对应最低 CANN 版本。
+- 检查 torch tensor 的 storage、data pointer、shape、stride、dtype 和 device API。
+- 创建最小 NPU tensor，并检查 `torch.npu.current_stream()` 和 stream pointer。
+- 对 torch_npu 检查其与 torch 的配套发布族或功能探针，明确区分“fla_npu wheel 可复用”与“宿主 Ascend PyTorch 组合本身可用”。
 - 在发起算子前解析公共 ACL 和当前 wrapper 所需的 aclnn 符号。
-- 对 torch 使用能力探测而不是精确锁版本，例如检查 NPU tensor、storage API、`torch.npu.current_stream()` 和 stream pointer。
-- 对 torch_npu 检查其与 torch 的发布族或功能探针，明确区分“fla_npu wheel 可复用”与“宿主 Ascend PyTorch 组合本身可用”。
-- 外部 run 包覆盖内嵌 OPP 后同步更新兼容性清单，防止 metadata 与实际 op_api/kernel 版本脱节。
-- CI 根据同一份清单生成或校验版本矩阵，发布时只声明真实跑通的组合。
+- 对带反向的算子执行最小 autograd smoke，验证 Python 正反向绑定仍然成立。
+- 外部 run 包覆盖内嵌 OPP 后同步更新算子和符号清单，防止 wrapper 与实际 op_api 不一致。
+- CI 根据同一份清单生成或校验 Python、torch、torch_npu 版本矩阵，发布时只声明真实跑通的组合。
 
-这个闭环不需要把 torch/torch_npu 写成严格 `install_requires` pin。它保留跨版本复用能力，同时把 SOC、CANN、host ELF 和必要运行能力变成可解释、可提前失败的检查。
+这个闭环不需要把 torch/torch_npu 写成严格 `install_requires` pin。它保留跨版本复用能力，同时把 tensor、backend、stream、autograd 和必要符号变成可解释、可提前失败的检查。
 
 ## 解耦带来的好处
 
-- **包数量更少**：默认只需要按 SOC 和 host 架构构建 wheel，不需要再按 torch/Python/C++ ABI 组合爆炸式构建。
-- **安装更简单**：新 conda 环境里只要 CANN 和 Python 依赖齐全，默认一键 wheel 不需要安装 torch_npu 生成工具链才能构建。
+- **包数量更少**：同一个 wheel 可以覆盖经过验证的多组 torch、torch_npu、Python 和 C++ ABI 环境，不再为每组框架组合重复构建。
+- **安装更简单**：新 conda 环境不需要安装 torch_npu 生成工具链或重新编译 PyTorch C++ extension。
 - **升级 torch 更容易**：torch minor 升级只要 Python tensor/current stream API 兼容，就不需要重编 PyTorch C++ extension。
-- **问题边界更清晰**：调用失败通常落在 Python wrapper ABI、OPP 产物、CANN/ACL runtime 或 kernel 本身，不再混入 dispatcher 注册和 C++ ABI 加载问题。
+- **问题边界更清晰**：框架兼容问题通常落在 tensor/storage、backend/stream、autograd 或动态符号能力，不再混入 dispatcher 注册和 C++ ABI 加载问题。
 - **迁移风险可控**：旧 `torch.ops.npu.*` 被隔离为 opt-in 兼容路径，新代码默认走 `fla_npu.ops.ascendc`。
 - **其他仓可复用**：公共 runtime 负责 descriptor、workspace、stream、保活和 format 透传，具体算子只补自己的 `aclnn` 签名和输出形状。
 
@@ -241,7 +238,7 @@ preflight 应完成以下工作：
 - 默认 wheel 构建路径里新增 `CppExtension`、`BuildExtension`、`torch.ops.load_library()` 或 host `.so` Python extension。
 - 默认路径链接 `libtorch.so`、`libc10.so`、`libtorch_npu.so`。
 - 默认构建必须依赖 `torchnpugen`、torch_npu op-plugin 生成代码或 derivatives 生成。
-- wheel 文件名重新出现 `cp311`、`linux_aarch64`、`cxx11abi` 等非 pure-python tag。
+- wheel 文件名重新出现 `cp311`、`cxx11abi` 等框架或 CPython ABI tag。
 - 为了读取 format、stream 或 device 信息，在公共 runtime 里把 torch_npu 从“可选复用”改成“必须 import”。
 - 新增 autograd 支持时依赖 dispatcher derivatives，而不是在 Python 入口层用 `torch.autograd.Function` 直调 backward op。
 
@@ -249,8 +246,6 @@ preflight 应完成以下工作：
 
 ## 非目标
 
-- 不尝试让 wheel 脱离 CANN/ACL runtime。运行时仍需要用户先 source CANN `set_env.sh`。
-- 不把所有 SOC 合成一个 wheel。OPP binary 仍按 SOC 和架构分别构建，例如 `910b`、`910_93`、`950`。
 - 不在默认路径里提供 `torch_npu.ops` 或 `torch.ops.npu` 注册。旧路径必须显式调用 `fla_npu.load_legacy_torch_ops()`。
 - 不在每个算子 API 上暴露 stream 参数。stream 通过当前 NPU stream 约定传递，详见“外部 executor stream 感知”。
 
@@ -436,14 +431,15 @@ fla_npu.load_legacy_torch_ops()
 
 ### 一个 wheel 如何兼容多个 torch、python 和 cxx 版本？
 
-默认 wheel 的 Python 调用层是纯 Python，tag 是 `py3-none-any`，没有 `cp311`、PyTorch extension 平台 tag 或 torch `cxx11abi` 绑定。wheel 仍内嵌面向特定 SOC 和 host 架构的 OPP 二进制，并通过 build tag 区分；这些二进制由 CANN/ACL runtime 加载，Python 层通过 `ctypes` 查找 `libcust_opapi.so` 中的 `aclnn*` 符号。
+默认 wheel 的 Python 调用层是纯 Python，tag 是 `py3-none-any`，没有 `cp311`、PyTorch extension 平台 tag 或 torch `cxx11abi` 绑定。Python 层通过 `ctypes` 查找 `libcust_opapi.so` 中的 `aclnn*` 符号，不加载包含 ATen/c10/torch_npu ABI 的桥接扩展，因此不会因为框架 minor 版本变化而天然要求重编。
 
 仍需满足：
 
 - Python 版本满足项目 `python_requires`。
-- torch 能提供 NPU tensor、`torch.npu.current_stream()` 和常规 tensor API。
-- CANN/ACL runtime 与 wheel 中 OPP 产物 ABI 兼容。
-- SOC 对应，例如 910B、910_93、950 不能混用错误 kernel binary。
+- torch 能提供稳定的 tensor、storage 和 autograd Python API。
+- torch 与 torch_npu 是一套本身可用的 NPU backend 组合。
+- `torch.npu.current_stream()` 能暴露当前 NPU stream。
+- 当前 wrapper 需要的 ACL/aclnn 符号可以解析，并通过真实算子与 Example/ST 验证。
 
 ### 为什么不把 stream 作为每个算子的参数？
 
