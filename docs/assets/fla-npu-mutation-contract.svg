@@ -10,7 +10,7 @@
       text { font-family: Arial, "Microsoft YaHei", sans-serif; fill: #172033; letter-spacing: 0; }
       .box { rx: 8; stroke-width: 2; }
       .title { font-size: 25px; font-weight: 700; }
-      .subtitle { font-size: 15px; fill: #52606D; }
+      .subtitle { font-size: 15px; font-weight: 700; fill: #C62828; }
       .node-title { font-size: 17px; font-weight: 700; }
       .node-text { font-size: 14px; }
       .lane-title { font-size: 18px; font-weight: 700; }
@@ -52,5 +52,5 @@
   <text x="1055"><tspan class="lane-title" x="1055" y="489" fill="#49366B">C  Functional state</tspan><tspan class="lane-text" x="1055" y="529">• 不修改输入 cache</tspan><tspan class="lane-text" x="1055" y="558">• 显式返回 (y, new_state)</tspan><tspan class="lane-text" x="1055" y="587">• 新状态不与旧状态 alias</tspan><tspan class="lane-text" x="1055" y="616">• 单独定义 autograd / FakeTensor</tspan><tspan class="lane-result" x="1055" y="669" fill="#49366B">结论：训练与导出的首选</tspan></text>
 
   <rect class="box" x="180" y="770" width="1140" height="90" fill="#EEF6FF" stroke="#3973B7" stroke-width="2.5"/>
-  <text x="750" text-anchor="middle"><tspan x="750" y="805" font-size="17" font-weight="700" fill="#1F466F">两类正确性不能互相替代</tspan><tspan x="750" y="835" font-size="15" fill="#1F466F">current stream / event 解决设备侧先后关系；版本计数、mutates_args 和 FakeTensor 解决 PyTorch 侧的状态、autograd 与图变换语义。</tspan></text>
+  <text x="750" text-anchor="middle"><tspan x="750" y="805" font-size="17" font-weight="700" fill="#C62828">两类正确性不能互相替代</tspan><tspan x="750" y="835" font-size="15" font-weight="700" fill="#C62828">current stream / event 解决设备侧先后关系；版本计数、mutates_args 和 FakeTensor 解决 PyTorch 侧的状态、autograd 与图变换语义。</tspan></text>
 </svg>

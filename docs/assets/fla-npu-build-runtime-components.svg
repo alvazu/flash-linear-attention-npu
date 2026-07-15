@@ -13,7 +13,7 @@
       .panel { rx: 10; stroke-width: 1.5; }
       .box { rx: 8; stroke-width: 2; }
       .title { font-size: 27px; font-weight: 700; }
-      .subtitle { font-size: 16px; fill: #52606D; }
+      .subtitle { font-size: 16px; font-weight: 700; fill: #C62828; }
       .phase { font-size: 19px; font-weight: 700; }
       .node-title { font-size: 16px; font-weight: 700; }
       .node-text { font-size: 14px; }

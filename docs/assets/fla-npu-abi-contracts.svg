@@ -15,6 +15,7 @@
       .header { font-size: 19px; font-weight: 700; }
       .node-title { font-size: 15px; font-weight: 700; }
       .node-text { font-size: 13px; }
+      .emphasis { font-weight: 700; fill: #C62828; }
       .edge { fill: none; stroke-width: 2.2; }
     </style>
   </defs>
@@ -72,5 +73,5 @@
   <text x="1245" text-anchor="middle"><tspan class="node-title" x="1245" y="879">版本下限 + capability probe</tspan><tspan class="node-text" x="1245" y="903">在目标设备 JIT / smoke test</tspan><tspan class="node-text" x="1245" y="925">Triton 失败不改变 Ascend C ABI 判定</tspan></text>
 
   <rect class="box" x="180" y="965" width="1140" height="50" fill="#E9F7EE" stroke="#4C9B60"/>
-  <text x="750" y="997" text-anchor="middle" font-size="15" font-weight="700" fill="#244B2F">原则：Python 能力变化用 adapter；torch / torch_npu 配套性用功能探针和测试矩阵；同名 C ABI 不兼容必须版本化。</text>
+  <text class="emphasis" x="750" y="997" text-anchor="middle" font-size="15">原则：Python 能力变化用 adapter；torch / torch_npu 配套性用功能探针和测试矩阵；同名 C ABI 不兼容必须版本化。</text>
 </svg>

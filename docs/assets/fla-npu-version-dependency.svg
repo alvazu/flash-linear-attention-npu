@@ -136,9 +136,9 @@
   </text>
   <rect class="box" x="710" y="775" width="550" height="90" fill="#EAF7ED" stroke="#4C9B60" stroke-width="2.5"/>
   <text text-anchor="middle" x="985">
-    <tspan class="result-title" x="985" y="801" fill="#244B2F">结果：默认 wheel 避开四类上层 ABI 绑定</tspan>
-    <tspan class="result-text" x="985" y="827" fill="#244B2F">不绑定 torch_npu dispatcher、PyTorch C++、CPython 与 C++ ABI</tspan>
-    <tspan class="result-text" x="985" y="851" fill="#244B2F">同一 wheel 覆盖经过验证的多组框架版本</tspan>
+    <tspan class="result-title" x="985" y="801" fill="#C62828">结果：默认 wheel 避开四类上层 ABI 绑定</tspan>
+    <tspan class="result-text" x="985" y="827" font-weight="700" fill="#C62828">不绑定 torch_npu dispatcher、PyTorch C++、CPython 与 C++ ABI</tspan>
+    <tspan class="result-text" x="985" y="851" font-weight="700" fill="#C62828">同一 wheel 覆盖经过验证的多组框架版本</tspan>
   </text>
 
   <!-- Labels are placed only in whitespace between nodes. -->

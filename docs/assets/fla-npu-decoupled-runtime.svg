@@ -9,6 +9,7 @@
       .lane-title { font: 700 18px Arial, "Microsoft YaHei", sans-serif; }
       .node-title { font: 700 17px Arial, "Microsoft YaHei", sans-serif; fill: #172033; }
       .node-text { font: 15px Arial, "Microsoft YaHei", sans-serif; fill: #334155; }
+      .emphasis { font-weight: 700; fill: #C62828; }
       .edge-label { font: 13px Arial, "Microsoft YaHei", sans-serif; }
       .box { stroke-width: 2; rx: 8; ry: 8; }
       .edge { fill: none; stroke-width: 2.6; stroke-linejoin: round; stroke-linecap: round; }
@@ -61,7 +62,7 @@
   <text text-anchor="middle" x="180">
     <tspan class="node-title" x="180" y="184">py3-none-any wheel</tspan>
     <tspan class="node-text" x="180" y="210">Python wrapper + 内嵌 OPP</tspan>
-    <tspan class="node-text" x="180" y="234">不携带 cp / cxx11abi tag</tspan>
+    <tspan class="node-text emphasis" x="180" y="234">不携带 cp / cxx11abi tag</tspan>
   </text>
   <rect class="box" x="50" y="310" width="260" height="140" fill="#F4F8FF" stroke="#5B7DB1"/>
   <text text-anchor="middle" x="180">
@@ -121,7 +122,7 @@
     <tspan class="node-title" x="1115" y="579">ACL tensor metadata 透传</tspan>
     <tspan class="node-text" x="1115" y="606">shape / stride / storage offset</tspan>
     <tspan class="node-text" x="1115" y="631">dtype / format / data ptr</tspan>
-    <tspan class="node-text" x="1115" y="656">NZ 等私有格式不做隐式转换</tspan>
+    <tspan class="node-text emphasis" x="1115" y="656">NZ 等私有格式不做隐式转换</tspan>
   </text>
   <rect class="box" x="970" y="700" width="290" height="165" fill="#FFF4F4" stroke="#D85C5C"/>
   <text text-anchor="middle" x="1115">
@@ -130,7 +131,7 @@
     <tspan class="node-text" x="1115" y="780">加载 custom_aclnn_extension_lib*.so</tspan>
     <tspan class="node-text" x="1115" y="806">注册 torch.ops.npu.*</tspan>
     <tspan class="node-text" x="1115" y="832">桥接 torch 参数到自定义 aclnn</tspan>
-    <tspan class="node-text" x="1115" y="856">显式启用后才绑定框架 ABI</tspan>
+    <tspan class="node-text emphasis" x="1115" y="856">显式启用后才绑定框架 ABI</tspan>
   </text>
 
   <!-- Edge labels sit in gaps, never on top of nodes. -->

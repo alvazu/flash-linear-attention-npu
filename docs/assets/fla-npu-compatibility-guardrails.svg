@@ -13,13 +13,14 @@
       .header { font-size: 19px; font-weight: 700; }
       .node-title { font-size: 15px; font-weight: 700; }
       .node-text { font-size: 14px; }
+      .emphasis { font-weight: 700; fill: #C62828; }
       .edge { fill: none; stroke-width: 2; }
       .result-edge { fill: none; stroke-width: 2.3; }
     </style>
   </defs>
   <rect width="1500" height="930" fill="#FFFFFF"/>
   <text x="750" y="55" text-anchor="middle" font-size="25" font-weight="700">依赖兼容性：已有门禁、当前缺口与完整闭环</text>
-  <text x="750" y="92" text-anchor="middle" font-size="15" fill="#52606D">解耦不等于放弃检查：用运行时能力和可追溯清单替代 Torch C++ ABI 锁定</text>
+  <text class="emphasis" x="750" y="92" text-anchor="middle" font-size="15">解耦不等于放弃检查：用运行时能力和可追溯清单替代 Torch C++ ABI 锁定</text>
 
   <rect class="panel" x="30" y="120" width="440" height="610" fill="#F7FCF8" stroke="#A8D4B2"/>
   <rect class="panel" x="530" y="120" width="440" height="610" fill="#FFFBF2" stroke="#E6C36A"/>
@@ -83,7 +84,7 @@
 
   <rect class="box" x="180" y="790" width="1140" height="100" fill="#EEF6FF" stroke="#3973B7" stroke-width="2.5"/>
   <text x="750" text-anchor="middle">
-    <tspan x="750" y="826" font-size="17" font-weight="700" fill="#1F466F">目标：不锁死 torch minor / patch，但在首次真实调用前识别不兼容框架环境</tspan>
-    <tspan x="750" y="858" font-size="15" fill="#1F466F">tensor、NPU 运行时、autograd、mutation 和必要符号都能明确失败；发布矩阵只声明真实验证组合</tspan>
+    <tspan x="750" y="826" font-size="17" font-weight="700" fill="#C62828">目标：不锁死 torch minor / patch，但在首次真实调用前识别不兼容框架环境</tspan>
+    <tspan x="750" y="858" font-size="15" font-weight="700" fill="#C62828">tensor、NPU 运行时、autograd、mutation 和必要符号都能明确失败；发布矩阵只声明真实验证组合</tspan>
   </text>
 </svg>
