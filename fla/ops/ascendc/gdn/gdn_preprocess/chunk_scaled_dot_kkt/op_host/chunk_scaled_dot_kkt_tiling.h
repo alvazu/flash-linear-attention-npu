@@ -8,7 +8,9 @@
 namespace optiling {
 BEGIN_TILING_DATA_DEF(ChunkScaledDotKktTilingData)
     TILING_DATA_FIELD_DEF(uint64_t, B);
-    TILING_DATA_FIELD_DEF(uint64_t, H);
+    TILING_DATA_FIELD_DEF(uint64_t, Hk);
+    TILING_DATA_FIELD_DEF(uint64_t, Hv);
+    TILING_DATA_FIELD_DEF(uint64_t, hvPerHk);
     TILING_DATA_FIELD_DEF(uint64_t, T);
     TILING_DATA_FIELD_DEF(uint64_t, K);
     TILING_DATA_FIELD_DEF(uint64_t, BT);

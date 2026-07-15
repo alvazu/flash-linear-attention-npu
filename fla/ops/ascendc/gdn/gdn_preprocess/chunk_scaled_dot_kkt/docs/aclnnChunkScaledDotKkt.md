@@ -15,10 +15,10 @@
   A_{b,h,t,c} =
   \beta_{b,h,t}
   \exp(\mathrm{clip}(g_{b,h,t} - g_{b,h,s}, -50, 50))
-  \sum_d k_{b,h,t,d} k_{b,h,s,d}
+  \sum_d k_{b,hk,t,d} k_{b,hk,s,d}
   $$
 
-  其中 `BT=chunkSize`，`r=t mod BT`，`s=t-r+c`。当 `c >= r` 时输出为 0。
+  其中 `BT=chunkSize`，`r=t mod BT`，`s=t-r+c`。GVA 场景下 `k` 使用 `Hk` 个 key head，`g/beta` 使用 `Hv` 个 value head 输入，`A` 与 `k` 的 `Hk` 对齐；当 `Hv > Hk` 时，本 KKT 算子读取 `g/beta` 的前 `Hk` 个 head 参与计算。当 `c >= r` 时输出为 0。
 
 ## 函数原型
 
@@ -51,13 +51,13 @@ aclnnStatus aclnnChunkScaledDotKkt(
 
 | 参数名 | 输入/输出 | 描述 |
 | -- | -- | -- |
-| k | 输入 | key 张量，Device 侧 aclTensor，shape 为 `[B,H,T,K]`，数据类型为 FLOAT16 或 BF16 |
-| g | 输入 | cumulative gate 张量，Device 侧 aclTensor，shape 为 `[B,H,T]`，数据类型为 FLOAT |
-| beta | 输入 | beta 缩放张量，Device 侧 aclTensor，shape 为 `[B,H,T]`，数据类型为 FLOAT |
+| k | 输入 | key 张量，Device 侧 aclTensor，shape 为 `[B,Hk,T,K]`，数据类型为 FLOAT16 或 BF16 |
+| g | 输入 | cumulative gate 张量，Device 侧 aclTensor，shape 为 `[B,Hv,T]`，数据类型为 FLOAT |
+| beta | 输入 | beta 缩放张量，Device 侧 aclTensor，shape 为 `[B,Hv,T]`，数据类型为 FLOAT |
 | cuSeqlensOptional | 输入 | 变长序列累计长度，Host 侧 aclIntArray；定长时传 `nullptr` |
 | chunkIndicesOptional | 输入 | 变长 chunk 元数据，Host 侧 aclIntArray，按 `[seq_id, chunk_id]` 成对存放；定长时传 `nullptr` |
 | chunkSize | 输入 | chunk 大小，仅支持 `16`、`32`、`64`、`128` |
-| A | 输出 | 输出张量，Device 侧 aclTensor，shape 为 `[B,H,T,chunkSize]`，数据类型为 FLOAT |
+| A | 输出 | 输出张量，Device 侧 aclTensor，shape 为 `[B,Hk,T,chunkSize]`，数据类型为 FLOAT |
 | workspaceSize | 输出 | 返回执行该算子所需的 workspace 大小 |
 | executor | 输出 | 返回算子执行器 |
 
@@ -74,7 +74,7 @@ aclnnStatus aclnnChunkScaledDotKkt(
 
 1. `k` 支持 FLOAT16 和 BF16。
 2. `g` 和 `beta` 仅支持 FLOAT。
-3. `k` shape 为 `[B,H,T,K]`，`g`/`beta` shape 为 `[B,H,T]`。
+3. `k` shape 为 `[B,Hk,T,K]`，`g`/`beta` shape 为 `[B,Hv,T]`，且 `Hv % Hk == 0`。
 4. `chunkSize` 仅支持 `16`、`32`、`64`、`128`。
 5. `cuSeqlensOptional` 和 `chunkIndicesOptional` 必须同时传入或同时为 `nullptr`。
 6. 变长模式下 `chunkIndicesOptional` 表示 `[seq_id, chunk_id]` 的 flatten 形式，`chunk_id` 从 0 开始。
@@ -85,7 +85,7 @@ aclnnStatus aclnnChunkScaledDotKkt(
 
 | 输出 | 数据类型 | Shape | 描述 |
 | -- | -- | -- | -- |
-| A | FLOAT | `[B,H,T,chunkSize]` | 每个 chunk 内的严格下三角 scaled dot product |
+| A | FLOAT | `[B,Hk,T,chunkSize]` | 每个 chunk 内的严格下三角 scaled dot product |
 
 ## 返回值
 
@@ -111,9 +111,9 @@ torch.ops.npu.npu_chunk_scaled_dot_kkt(
 
 | 参数 | 类型 | 描述 |
 | -- | -- | -- |
-| k | Tensor | shape 为 `[B,H,T,K]`，dtype 为 `torch.float16` 或 `torch.bfloat16` |
-| g | Tensor | shape 为 `[B,H,T]`，dtype 为 `torch.float32` |
-| beta | Tensor | shape 为 `[B,H,T]`，dtype 为 `torch.float32` |
+| k | Tensor | shape 为 `[B,Hk,T,K]`，dtype 为 `torch.float16` 或 `torch.bfloat16` |
+| g | Tensor | shape 为 `[B,Hv,T]`，dtype 为 `torch.float32` |
+| beta | Tensor | shape 为 `[B,Hv,T]`，dtype 为 `torch.float32` |
 | cu_seqlens | list[int] \| None | 变长序列累计长度；定长时为 `None` |
 | chunk_indices | list[int] \| None | 变长 chunk 元数据，按 `[seq_id, chunk_id]` 成对 flatten；定长时为 `None` |
 | chunk_size | int | chunk 大小，默认 64 |
@@ -122,7 +122,7 @@ torch.ops.npu.npu_chunk_scaled_dot_kkt(
 
 | 返回值 | 类型 | 描述 |
 | -- | -- | -- |
-| A | Tensor | shape 为 `[B,H,T,chunk_size]`，dtype 为 `torch.float32` |
+| A | Tensor | shape 为 `[B,Hk,T,chunk_size]`，dtype 为 `torch.float32` |
 
 ### 使用示例
 
@@ -131,11 +131,11 @@ import torch
 import torch_npu
 import fla_npu
 
-B, H, T, K, BT = 2, 4, 128, 64, 64
-k = torch.randn(B, H, T, K, dtype=torch.float16, device="npu")
-g = torch.randn(B, H, T, dtype=torch.float32, device="npu")
-beta = torch.rand(B, H, T, dtype=torch.float32, device="npu")
+B, Hk, Hv, T, K, BT = 2, 2, 4, 128, 64, 64
+k = torch.randn(B, Hk, T, K, dtype=torch.float16, device="npu")
+g = torch.randn(B, Hv, T, dtype=torch.float32, device="npu")
+beta = torch.rand(B, Hv, T, dtype=torch.float32, device="npu")
 
 A = torch.ops.npu.npu_chunk_scaled_dot_kkt(k, g, beta, chunk_size=BT)
-assert A.shape == (B, H, T, BT)
+assert A.shape == (B, Hk, T, BT)
 ```

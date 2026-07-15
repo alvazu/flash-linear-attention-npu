@@ -10,12 +10,24 @@ bool IsChunkSizeSupported(int64_t chunkSize)
 namespace ops {
 static ge::graphStatus InferShapeChunkScaledDotKkt(gert::InferShapeContext *context)
 {
-    if (context == nullptr || context->GetInputShape(0) == nullptr || context->GetOutputShape(0) == nullptr) {
+    if (context == nullptr || context->GetInputShape(0) == nullptr || context->GetInputShape(1) == nullptr ||
+        context->GetInputShape(2) == nullptr || context->GetOutputShape(0) == nullptr) {
         return ge::GRAPH_FAILED;
     }
 
     const gert::Shape *kShape = context->GetInputShape(0);
-    if (kShape->GetDimNum() != 4) {
+    const gert::Shape *gShape = context->GetInputShape(1);
+    const gert::Shape *betaShape = context->GetInputShape(2);
+    if (kShape->GetDimNum() != 4 || gShape->GetDimNum() != 3 || betaShape->GetDimNum() != 3) {
+        return ge::GRAPH_FAILED;
+    }
+    const int64_t b = kShape->GetDim(0);
+    const int64_t hk = kShape->GetDim(1);
+    const int64_t t = kShape->GetDim(2);
+    const int64_t hv = gShape->GetDim(1);
+    if (b <= 0 || hk <= 0 || hv <= 0 || t <= 0 || gShape->GetDim(0) != b || gShape->GetDim(2) != t ||
+        betaShape->GetDim(0) != b || betaShape->GetDim(1) != hv || betaShape->GetDim(2) != t ||
+        (hv % hk) != 0) {
         return ge::GRAPH_FAILED;
     }
 
@@ -29,9 +41,9 @@ static ge::graphStatus InferShapeChunkScaledDotKkt(gert::InferShapeContext *cont
 
     gert::Shape *outShape = context->GetOutputShape(0);
     outShape->SetDimNum(4);
-    outShape->SetDim(0, kShape->GetDim(0));
-    outShape->SetDim(1, kShape->GetDim(1));
-    outShape->SetDim(2, kShape->GetDim(2));
+    outShape->SetDim(0, b);
+    outShape->SetDim(1, hk);
+    outShape->SetDim(2, t);
     outShape->SetDim(3, chunkSize);
     return ge::GRAPH_SUCCESS;
 }

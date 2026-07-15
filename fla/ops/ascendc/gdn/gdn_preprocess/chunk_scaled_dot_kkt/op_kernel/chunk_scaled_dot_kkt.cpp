@@ -20,8 +20,8 @@ __global__ __aicore__ void chunk_scaled_dot_kkt(GM_ADDR k,
     NsChunkScaledDotKkt::ChunkScaledDotKkt<DTYPE_K> op;
     REGIST_MATMUL_OBJ(&pipe, GetSysWorkSpacePtr(), op.scoreMatmul, &tilingData.cubeTilingData);
     GM_ADDR userWorkspace = GetUserWorkspace(workspace);
-    op.Init(k, g, beta, cuSeqlens, chunkIndices, A, userWorkspace, tilingData.B, tilingData.H, tilingData.T,
-            tilingData.K, tilingData.BT, tilingData.NT, tilingData.taskNum, tilingData.usedAicNum,
+    op.Init(k, g, beta, cuSeqlens, chunkIndices, A, userWorkspace, tilingData.B, tilingData.Hk, tilingData.Hv,
+            tilingData.hvPerHk, tilingData.T, tilingData.K, tilingData.BT, tilingData.NT, tilingData.taskNum, tilingData.usedAicNum,
             tilingData.usedAivNum, tilingData.btAlign, tilingData.isVarlen, &pipe);
 
     if ASCEND_IS_AIV {

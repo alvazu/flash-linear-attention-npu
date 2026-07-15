@@ -10,7 +10,12 @@
 
 ## 2. 算子功能
 
-对每个 batch、head 和 chunk，计算带 gate 衰减和 beta 缩放的严格下三角 `K @ K^T`：
+对每个 batch、key head 和 chunk，计算带 gate 衰减和 beta 缩放的严格下三角 `K @ K^T`。GVA 场景下，`g`/`beta` 按 value head 维 `Hv` 输入，但本 KKT 算子输出 `A` 与 `k` 的 key head 维 `Hk` 对齐：
+
+```text
+h in [0, Hk)
+g/beta head = h
+```
 
 $$
 A_{b,h,t,c} =
@@ -21,7 +26,7 @@ A_{b,h,t,c} =
 \end{cases}
 $$
 
-其中 `BT=chunk_size`，`r=t mod BT`，`s=t-r+c`。输出只保留每个 chunk 内的严格下三角列，最后一维长度固定为 `BT`。
+其中 `BT=chunk_size`，`r=t mod BT`，`s=t-r+c`，`h` 为 key head。输出只保留每个 chunk 内的严格下三角列，最后一维长度固定为 `BT`。当 `Hv > Hk` 时，当前实现按 Triton/dump 路径读取 `g`/`beta` 的前 `Hk` 个 head 参与 KKT 计算，其余 value head 由后续 value-side 算子使用。
 
 ## 3. 接口定义
 
@@ -63,9 +68,9 @@ torch.ops.npu.npu_chunk_scaled_dot_kkt(
 
 | 参数 | 数据类型 | Shape | 是否必须 | 描述 |
 | -- | -- | -- | -- | -- |
-| k | FLOAT16/BF16 | `[B,H,T,K]` | 是 | key 张量，head-first 排布 |
-| g | FLOAT | `[B,H,T]` | 是 | chunk 内 cumulative gate，head-first 排布 |
-| beta | FLOAT | `[B,H,T]` | 是 | 每个 token/head 的缩放系数，head-first 排布 |
+| k | FLOAT16/BF16 | `[B,Hk,T,K]` | 是 | key 张量，head-first 排布 |
+| g | FLOAT | `[B,Hv,T]` | 是 | chunk 内 cumulative gate，head-first 排布 |
+| beta | FLOAT | `[B,Hv,T]` | 是 | 每个 token/value head 的缩放系数，head-first 排布 |
 | cu_seqlens | INT64 | `[N+1]` | 否 | 变长序列累计长度；定长时不传 |
 | chunk_indices | INT64 | `[2*num_chunks]` 或 `[num_chunks,2]` | 否 | 变长 chunk 元数据，按 `[seq_id, chunk_id]` 成对存放 |
 | chunk_size | INT | - | 否 | chunk 大小，默认 64 |
@@ -74,17 +79,18 @@ torch.ops.npu.npu_chunk_scaled_dot_kkt(
 
 | 输出 | 数据类型 | Shape | 描述 |
 | -- | -- | -- | -- |
-| A | FLOAT | `[B,H,T,chunk_size]` | WY 表示中的严格下三角块 |
+| A | FLOAT | `[B,Hk,T,chunk_size]` | WY 表示中的严格下三角块 |
 
 ## 6. 输入约束
 
-1. `k` 必须为 4D，shape 为 `[B,H,T,K]`。
-2. `g` 和 `beta` 必须为 3D，shape 为 `[B,H,T]`。
-3. `chunk_size` 仅支持 `16`、`32`、`64`、`128`。
-4. `cu_seqlens` 和 `chunk_indices` 必须同时传入或同时省略；省略时走定长 dense 序列。
-5. `chunk_indices` 表示 `[seq_id, chunk_id]`，`chunk_id` 从 0 开始。
-6. 当前版本不支持 `gk` 分支。
-7. 输入建议传入 contiguous Tensor；PyTorch wrapper 会在调用 ACLNN 前执行 contiguous。
+1. `k` 必须为 4D，shape 为 `[B,Hk,T,K]`。
+2. `g` 和 `beta` 必须为 3D，shape 为 `[B,Hv,T]`，并且 `B/T` 与 `k` 一致。
+3. GVA 要求 `Hv % Hk == 0`；`Hk == Hv` 时退化为普通 MHA。KKT 输出 head 维为 `Hk`。
+4. `chunk_size` 仅支持 `16`、`32`、`64`、`128`。
+5. `cu_seqlens` 和 `chunk_indices` 必须同时传入或同时省略；省略时走定长 dense 序列。
+6. `chunk_indices` 表示 `[seq_id, chunk_id]`，`chunk_id` 从 0 开始。
+7. 当前版本不支持 `gk` 分支。
+8. 输入建议传入 contiguous Tensor；PyTorch wrapper 会在调用 ACLNN 前执行 contiguous。
 
 ## 7. 目录结构
 

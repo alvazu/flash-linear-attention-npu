@@ -157,11 +157,16 @@ ge::graphStatus TilingFunc(gert::TilingContext *context)
     }
 
     const int64_t bI64 = kShape.GetDim(0);
-    const int64_t hI64 = kShape.GetDim(1);
+    const int64_t hkI64 = kShape.GetDim(1);
     const int64_t tI64 = kShape.GetDim(2);
     const int64_t kI64 = kShape.GetDim(3);
-    if (bI64 <= 0 || hI64 <= 0 || tI64 <= 0 || kI64 <= 0 || !Shape3Equal(gShape, bI64, hI64, tI64) ||
-        !Shape3Equal(betaShape, bI64, hI64, tI64)) {
+    if (gShape.GetDimNum() != 3 || betaShape.GetDimNum() != 3) {
+        return ge::GRAPH_FAILED;
+    }
+    const int64_t hvI64 = gShape.GetDim(1);
+    if (bI64 <= 0 || hkI64 <= 0 || hvI64 <= 0 || tI64 <= 0 || kI64 <= 0 ||
+        gShape.GetDim(0) != bI64 || gShape.GetDim(2) != tI64 ||
+        !Shape3Equal(betaShape, bI64, hvI64, tI64) || (hvI64 % hkI64) != 0) {
         return ge::GRAPH_FAILED;
     }
 
@@ -181,7 +186,9 @@ ge::graphStatus TilingFunc(gert::TilingContext *context)
     }
 
     const uint64_t b = static_cast<uint64_t>(bI64);
-    const uint64_t h = static_cast<uint64_t>(hI64);
+    const uint64_t hk = static_cast<uint64_t>(hkI64);
+    const uint64_t hv = static_cast<uint64_t>(hvI64);
+    const uint64_t hvPerHk = hv / hk;
     const uint64_t t = static_cast<uint64_t>(tI64);
     const uint64_t k = static_cast<uint64_t>(kI64);
     const uint64_t bt = static_cast<uint64_t>(chunkSizeI64);
@@ -217,7 +224,7 @@ ge::graphStatus TilingFunc(gert::TilingContext *context)
     uint64_t taskNum = 0;
     uint64_t scoreElems = 0;
     uint64_t scoreBytes = 0;
-    if (MulOverflow(b, h, &bh) || MulOverflow(bh, nt, &taskNum) || MulOverflow(taskNum, bt * bt, &scoreElems) ||
+    if (MulOverflow(b, hk, &bh) || MulOverflow(bh, nt, &taskNum) || MulOverflow(taskNum, bt * bt, &scoreElems) ||
         MulOverflow(scoreElems, sizeof(float), &scoreBytes) || taskNum == 0) {
         return ge::GRAPH_FAILED;
     }
@@ -257,7 +264,9 @@ ge::graphStatus TilingFunc(gert::TilingContext *context)
 
     ChunkScaledDotKktTilingData tiling;
     tiling.set_B(b);
-    tiling.set_H(h);
+    tiling.set_Hk(hk);
+    tiling.set_Hv(hv);
+    tiling.set_hvPerHk(hvPerHk);
     tiling.set_T(t);
     tiling.set_K(k);
     tiling.set_BT(bt);

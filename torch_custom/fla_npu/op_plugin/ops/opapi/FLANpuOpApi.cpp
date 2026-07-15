@@ -352,9 +352,9 @@ at::Tensor npu_chunk_scaled_dot_kkt(
     at::OptionalIntArrayRef chunk_indices,
     int64_t chunk_size)
 {
-    TORCH_CHECK(k.dim() == 4, "npu_chunk_scaled_dot_kkt: k must be [B,H,T,K], got ", k.sizes());
-    TORCH_CHECK(g.dim() == 3, "npu_chunk_scaled_dot_kkt: g must be [B,H,T], got ", g.sizes());
-    TORCH_CHECK(beta.dim() == 3, "npu_chunk_scaled_dot_kkt: beta must be [B,H,T], got ", beta.sizes());
+    TORCH_CHECK(k.dim() == 4, "npu_chunk_scaled_dot_kkt: k must be [B,Hk,T,K], got ", k.sizes());
+    TORCH_CHECK(g.dim() == 3, "npu_chunk_scaled_dot_kkt: g must be [B,Hv,T], got ", g.sizes());
+    TORCH_CHECK(beta.dim() == 3, "npu_chunk_scaled_dot_kkt: beta must be [B,Hv,T], got ", beta.sizes());
     TORCH_CHECK(
         k.scalar_type() == c10::ScalarType::Half || k.scalar_type() == c10::ScalarType::BFloat16,
         "npu_chunk_scaled_dot_kkt: k dtype must be float16 or bfloat16, got ", k.scalar_type());
@@ -379,19 +379,23 @@ at::Tensor npu_chunk_scaled_dot_kkt(
     }
 
     const int64_t B = k.size(0);
-    const int64_t H = k.size(1);
+    const int64_t Hk = k.size(1);
     const int64_t T = k.size(2);
+    const int64_t Hv = g.size(1);
     TORCH_CHECK(
-        g.size(0) == B && g.size(1) == H && g.size(2) == T,
-        "npu_chunk_scaled_dot_kkt: g must match k prefix [B,H,T]; k=", k.sizes(), " g=", g.sizes());
+        g.size(0) == B && g.size(2) == T,
+        "npu_chunk_scaled_dot_kkt: g must match k B/T and provide value heads [B,Hv,T]; k=", k.sizes(), " g=", g.sizes());
     TORCH_CHECK(
-        beta.size(0) == B && beta.size(1) == H && beta.size(2) == T,
-        "npu_chunk_scaled_dot_kkt: beta must match k prefix [B,H,T]; k=", k.sizes(), " beta=", beta.sizes());
+        beta.size(0) == B && beta.size(1) == Hv && beta.size(2) == T,
+        "npu_chunk_scaled_dot_kkt: beta must match g as [B,Hv,T]; g=", g.sizes(), " beta=", beta.sizes());
+    TORCH_CHECK(
+        Hk > 0 && Hv > 0 && Hv % Hk == 0,
+        "npu_chunk_scaled_dot_kkt: GVA requires Hv divisible by Hk; Hk=", Hk, " Hv=", Hv);
 
     at::Tensor k_contig = k.contiguous();
     at::Tensor g_contig = g.contiguous();
     at::Tensor beta_contig = beta.contiguous();
-    at::Tensor A = at::empty({B, H, T, chunk_size}, k.options().dtype(c10::ScalarType::Float));
+    at::Tensor A = at::empty({B, Hk, T, chunk_size}, k.options().dtype(c10::ScalarType::Float));
 
     EXEC_NPU_CMD_EXT(
         aclnnChunkScaledDotKkt,
