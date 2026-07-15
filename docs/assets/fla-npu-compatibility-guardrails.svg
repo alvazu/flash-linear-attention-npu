@@ -64,7 +64,7 @@
   <rect class="box" x="560" y="425" width="380" height="75" fill="#FFFFFF" stroke="#D9970B"/>
   <text x="750" text-anchor="middle"><tspan class="node-title" x="750" y="454">tensor / storage API 演进</tspan><tspan class="node-text" x="750" y="480">py3-none-any 不会自动证明 Python 能力兼容</tspan></text>
   <rect class="box" x="560" y="525" width="380" height="75" fill="#FFFFFF" stroke="#D9970B"/>
-  <text x="750" text-anchor="middle"><tspan class="node-title" x="750" y="554">autograd 行为</tspan><tspan class="node-text" x="750" y="580">正反向绑定仍需跨框架版本真实测试</tspan></text>
+  <text x="750" text-anchor="middle"><tspan class="node-title" x="750" y="554">autograd / alias / mutation</tspan><tspan class="node-text" x="750" y="580">raw ctypes 不自动声明 cache 副作用和图语义</tspan></text>
   <rect class="box" x="560" y="625" width="380" height="75" fill="#FFFFFF" stroke="#D9970B"/>
   <text x="750" text-anchor="middle"><tspan class="node-title" x="750" y="654">同名符号后的 ABI 变化</tspan><tspan class="node-text" x="750" y="680">参数签名变化仍需 header diff 和调用测试发现</tspan></text>
 
@@ -77,13 +77,13 @@
   <rect class="box" x="1060" y="425" width="380" height="75" fill="#FFFFFF" stroke="#5B7DB1"/>
   <text x="1250" text-anchor="middle"><tspan class="node-title" x="1250" y="454">符号和 ABI 指纹</tspan><tspan class="node-text" x="1250" y="480">检查公共 ACL、aclnn 符号与 header 清单</tspan></text>
   <rect class="box" x="1060" y="525" width="380" height="75" fill="#FFFFFF" stroke="#5B7DB1"/>
-  <text x="1250" text-anchor="middle"><tspan class="node-title" x="1250" y="554">autograd smoke</tspan><tspan class="node-text" x="1250" y="580">检查正反向绑定、梯度数量和保存上下文</tspan></text>
+  <text x="1250" text-anchor="middle"><tspan class="node-title" x="1250" y="554">autograd + mutation smoke</tspan><tspan class="node-text" x="1250" y="580">版本计数、mutates_args、FakeTensor、opcheck</tspan></text>
   <rect class="box" x="1060" y="625" width="380" height="75" fill="#FFFFFF" stroke="#5B7DB1"/>
   <text x="1250" text-anchor="middle"><tspan class="node-title" x="1250" y="654">框架测试矩阵</tspan><tspan class="node-text" x="1250" y="680">CI 只声明真实跑通的 Python / torch / torch_npu 组合</tspan></text>
 
   <rect class="box" x="180" y="790" width="1140" height="100" fill="#EEF6FF" stroke="#3973B7" stroke-width="2.5"/>
   <text x="750" text-anchor="middle">
     <tspan x="750" y="826" font-size="17" font-weight="700" fill="#1F466F">目标：不锁死 torch minor / patch，但在首次真实调用前识别不兼容框架环境</tspan>
-    <tspan x="750" y="858" font-size="15" fill="#1F466F">tensor、NPU 运行时、autograd 和必要符号都能明确失败；发布矩阵只声明真实验证组合</tspan>
+    <tspan x="750" y="858" font-size="15" fill="#1F466F">tensor、NPU 运行时、autograd、mutation 和必要符号都能明确失败；发布矩阵只声明真实验证组合</tspan>
   </text>
 </svg>

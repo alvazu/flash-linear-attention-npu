@@ -18,6 +18,7 @@ kept opt-in and are not installed during normal import.
 from __future__ import annotations
 
 import functools
+import inspect
 import types
 import warnings
 from typing import Callable, Optional
@@ -46,6 +47,13 @@ BACKWARD_OPS = {
     "npu_fast_gelu_custom": "npu_fast_gelu_custom_backward",
     "causal_conv1d": "causal_conv1d_bwd",
     "npu_causal_conv1d": "npu_causal_conv1d_bwd",
+}
+
+# ctypes 直接写 tensor storage 时，PyTorch 无法从 Python 调用自动发现副作用。
+# 这里集中声明被修改的参数，由 direct-op wrapper 负责 grad 限制和版本计数。
+MUTATED_ARGUMENTS = {
+    "causal_conv1d": ("conv_states",),
+    "npu_causal_conv1d": ("conv_states",),
 }
 
 _LEGACY_TORCH_OPS_WARNING = (
@@ -115,9 +123,47 @@ def _get_torch_op(name: str):
 def _get_direct_op(name: str):
     _prepare_direct_runtime()
     try:
-        return ASCENDC_CTYPES_OPS[name]
+        op = ASCENDC_CTYPES_OPS[name]
     except KeyError as exc:
         raise AttributeError(f"fla_npu.ops.ascendc has no ctypes Ascend C op {name}.") from exc
+    return _wrap_mutable_direct_op(name, op)
+
+
+def _wrap_mutable_direct_op(name: str, op: Callable) -> Callable:
+    mutated_names = MUTATED_ARGUMENTS.get(name, ())
+    if not mutated_names:
+        return op
+
+    signature = inspect.signature(op)
+
+    @functools.wraps(op)
+    def wrapper(*args, **kwargs):
+        bound = signature.bind(*args, **kwargs)
+        bound.apply_defaults()
+        mutated_tensors = [bound.arguments[arg_name] for arg_name in mutated_names]
+
+        try:
+            import torch
+        except Exception as exc:
+            raise RuntimeError("Mutable Ascend C operators require the torch Python runtime.") from exc
+
+        mutated_tensors = [tensor for tensor in mutated_tensors if isinstance(tensor, torch.Tensor)]
+        requiring_grad = [
+            arg_name for arg_name in mutated_names if getattr(bound.arguments[arg_name], "requires_grad", False)
+        ]
+        if requiring_grad:
+            names = ", ".join(requiring_grad)
+            raise RuntimeError(
+                f"{name} mutates {names} in place through ctypes. Mutable state tensors "
+                "must not require gradients; use a functional state API for training."
+            )
+
+        result = op(*args, **kwargs)
+        if mutated_tensors:
+            torch.autograd.graph.increment_version(mutated_tensors)
+        return result
+
+    return wrapper
 
 
 def _warn_legacy_torch_op(name: str) -> None:
@@ -248,7 +294,9 @@ def causal_conv1d(
 ):
     """Causal conv1d with automatic backward binding for prefill mode.
 
-    Decode/speculative modes mutate cache state and are left on the raw op path.
+    ``conv_states`` is mutable state in every mode and must not require gradients.
+    Decode/speculative modes are left on the raw op path; prefill only binds
+    gradients for ``x``, ``weight`` and ``bias``.
     """
 
     can_bind_backward = (
@@ -367,6 +415,7 @@ _prepare_direct_runtime(raise_on_error=False)
 
 __all__ = [
     "BACKWARD_OPS",
+    "MUTATED_ARGUMENTS",
     "install_legacy_torch_ops_warning",
     "install_torch_npu_ops_compat",
     *sorted(set(_ASCENDC_OPS)),
