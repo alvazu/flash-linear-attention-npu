@@ -55,8 +55,12 @@ _DEFAULT_VARLEN_CHUNK_SIZES = (16, 32, 64, 128, 608 * 2)
 _ACCURACY_REFERENCE_VERSION = 1
 _SOLVE_TRI_ASCENDC_AVAILABLE: Optional[bool] = None
 _SOLVE_TRI_ASCENDC_UNAVAILABLE_REASON = ""
+_CUMSUM_KKT_ASCENDC_AVAILABLE: Optional[bool] = None
 _CUMSUM_KKT_ASCENDC_UNAVAILABLE_REASON = ""
+_BWD_CUMSUM_ASCENDC_AVAILABLE: Optional[bool] = None
 _BWD_CUMSUM_ASCENDC_UNAVAILABLE_REASON = ""
+_CUMSUM_KKT_ASCENDC_ENV = "GDR_USE_ASCENDC_CUMSUM_KKT"
+_BWD_CUMSUM_ASCENDC_ENV = "GDR_USE_ASCENDC_BWD_CUMSUM"
 
 
 def _make_gate(shape: tuple[int, ...], dtype: torch.dtype, device: str, gate_function: str) -> torch.Tensor:
@@ -109,6 +113,26 @@ def _as_int_list(value: Optional[list[int] | torch.Tensor]) -> Optional[list[int
     if isinstance(value, torch.Tensor):
         return [int(x) for x in value.detach().cpu().flatten().tolist()]
     return [int(x) for x in value]
+
+
+def _env_flag_enabled(name: str, default: bool = True) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    normalized = value.strip().lower()
+    if normalized in ("1", "true", "yes", "on", "enable", "enabled"):
+        return True
+    if normalized in ("0", "false", "no", "off", "disable", "disabled"):
+        return False
+    warnings.warn(
+        f"Ignoring invalid {name}={value!r}; expected one of 1/0, true/false, yes/no, on/off.",
+        RuntimeWarning,
+    )
+    return default
+
+
+def _is_power_of_two(value: int) -> bool:
+    return value > 0 and (value & (value - 1)) == 0
 
 
 def _activation_mode(activation: Optional[str]) -> int:
@@ -665,6 +689,44 @@ def _should_use_ascendc_cumsum_kkt(
     return Hk > 0 and Hv > 0 and Hv % Hk == 0
 
 
+def _probe_cumsum_kkt_ascendc(device: torch.device, dtype: torch.dtype) -> bool:
+    global _CUMSUM_KKT_ASCENDC_AVAILABLE, _CUMSUM_KKT_ASCENDC_UNAVAILABLE_REASON
+
+    if not _env_flag_enabled(_CUMSUM_KKT_ASCENDC_ENV):
+        _CUMSUM_KKT_ASCENDC_UNAVAILABLE_REASON = f"disabled by {_CUMSUM_KKT_ASCENDC_ENV}"
+        return False
+    if _CUMSUM_KKT_ASCENDC_AVAILABLE is not None:
+        return _CUMSUM_KKT_ASCENDC_AVAILABLE
+
+    probe_dtype = dtype if dtype in (torch.float16, torch.bfloat16) else torch.float16
+    try:
+        probe_chunk_size = 16
+        probe_k = torch.zeros((1, 1, probe_chunk_size, 128), dtype=probe_dtype, device=device)
+        probe_g = torch.zeros((1, 1, probe_chunk_size), dtype=torch.float32, device=device)
+        probe_beta = torch.ones((1, 1, probe_chunk_size), dtype=torch.float32, device=device)
+        probe_g = chunk_local_cumsum_ascendc(probe_g, chunk_size=probe_chunk_size, head_first=True)
+        chunk_scaled_dot_kkt_fwd_ascendc(
+            k=probe_k,
+            g=probe_g,
+            beta=probe_beta,
+            chunk_size=probe_chunk_size,
+            output_dtype=torch.float32,
+        )
+        torch.npu.synchronize()
+    except Exception as exc:
+        _CUMSUM_KKT_ASCENDC_AVAILABLE = False
+        _CUMSUM_KKT_ASCENDC_UNAVAILABLE_REASON = str(exc).splitlines()[0]
+        try:
+            torch.npu.synchronize()
+        except Exception:
+            pass
+        return False
+
+    _CUMSUM_KKT_ASCENDC_AVAILABLE = True
+    _CUMSUM_KKT_ASCENDC_UNAVAILABLE_REASON = ""
+    return True
+
+
 def chunk_local_cumsum_kkt_auto(
     k: torch.Tensor,
     g: torch.Tensor,
@@ -675,16 +737,17 @@ def chunk_local_cumsum_kkt_auto(
     chunk_size: int,
     output_dtype: torch.dtype,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    global _CUMSUM_KKT_ASCENDC_UNAVAILABLE_REASON
+    global _CUMSUM_KKT_ASCENDC_AVAILABLE, _CUMSUM_KKT_ASCENDC_UNAVAILABLE_REASON
 
     fallback_reason = ""
-    if _should_use_ascendc_cumsum_kkt(
+    should_try_ascendc = _env_flag_enabled(_CUMSUM_KKT_ASCENDC_ENV) and _should_use_ascendc_cumsum_kkt(
         k,
         g,
         beta,
         chunk_size=chunk_size,
         output_dtype=output_dtype,
-    ):
+    )
+    if should_try_ascendc and _probe_cumsum_kkt_ascendc(k.device, k.dtype):
         try:
             g_ascendc = g.transpose(1, 2).contiguous()
             beta_ascendc = beta.transpose(1, 2).contiguous().float()
@@ -706,12 +769,15 @@ def chunk_local_cumsum_kkt_auto(
             )
             return g_ascendc, beta_ascendc, A_ascendc.transpose(1, 2).contiguous()
         except Exception as exc:
+            _CUMSUM_KKT_ASCENDC_AVAILABLE = False
             _CUMSUM_KKT_ASCENDC_UNAVAILABLE_REASON = str(exc).splitlines()[0]
             fallback_reason = _CUMSUM_KKT_ASCENDC_UNAVAILABLE_REASON
             try:
                 torch.npu.synchronize()
             except Exception:
                 pass
+    elif should_try_ascendc:
+        fallback_reason = _CUMSUM_KKT_ASCENDC_UNAVAILABLE_REASON
 
     if fallback_reason:
         warnings.warn(
@@ -746,6 +812,40 @@ def chunk_local_cumsum_kkt_auto(
     )
 
 
+def _probe_bwd_cumsum_ascendc(device: torch.device) -> bool:
+    global _BWD_CUMSUM_ASCENDC_AVAILABLE, _BWD_CUMSUM_ASCENDC_UNAVAILABLE_REASON
+
+    if not _env_flag_enabled(_BWD_CUMSUM_ASCENDC_ENV):
+        _BWD_CUMSUM_ASCENDC_UNAVAILABLE_REASON = f"disabled by {_BWD_CUMSUM_ASCENDC_ENV}"
+        return False
+    if _BWD_CUMSUM_ASCENDC_AVAILABLE is not None:
+        return _BWD_CUMSUM_ASCENDC_AVAILABLE
+
+    try:
+        probe_chunk_size = 16
+        probe_dg = torch.zeros((1, 1, probe_chunk_size), dtype=torch.float32, device=device)
+        chunk_local_cumsum_ascendc(
+            probe_dg,
+            chunk_size=probe_chunk_size,
+            reverse=True,
+            head_first=True,
+            output_dtype=torch.float32,
+        )
+        torch.npu.synchronize()
+    except Exception as exc:
+        _BWD_CUMSUM_ASCENDC_AVAILABLE = False
+        _BWD_CUMSUM_ASCENDC_UNAVAILABLE_REASON = str(exc).splitlines()[0]
+        try:
+            torch.npu.synchronize()
+        except Exception:
+            pass
+        return False
+
+    _BWD_CUMSUM_ASCENDC_AVAILABLE = True
+    _BWD_CUMSUM_ASCENDC_UNAVAILABLE_REASON = ""
+    return True
+
+
 def chunk_local_cumsum_bwd_auto(
     dg: torch.Tensor,
     *,
@@ -753,38 +853,49 @@ def chunk_local_cumsum_bwd_auto(
     chunk_indices: Optional[Dict[str, Optional[torch.LongTensor]]],
     chunk_size: int,
 ) -> torch.Tensor:
-    global _BWD_CUMSUM_ASCENDC_UNAVAILABLE_REASON
+    global _BWD_CUMSUM_ASCENDC_AVAILABLE, _BWD_CUMSUM_ASCENDC_UNAVAILABLE_REASON
 
     fallback_reason = ""
-    try:
-        dg_ascendc = chunk_local_cumsum_ascendc(
-            dg,
-            chunk_size=chunk_size,
-            reverse=True,
-            cu_seqlens=cu_seqlens,
-            chunk_indices_out=chunk_indices,
-            head_first=True,
-            output_dtype=torch.float32,
-        )
-        return dg_ascendc.transpose(1, 2).contiguous()
-    except Exception as exc:
-        _BWD_CUMSUM_ASCENDC_UNAVAILABLE_REASON = str(exc).splitlines()[0]
-        fallback_reason = _BWD_CUMSUM_ASCENDC_UNAVAILABLE_REASON
-        try:
-            torch.npu.synchronize()
-        except Exception:
-            pass
-
-    warnings.warn(
-        "AscendC backward chunk_local_cumsum is unavailable; "
-        "falling back to Triton. "
-        f"Reason: {fallback_reason}",
-        RuntimeWarning,
+    should_try_ascendc = (
+        _env_flag_enabled(_BWD_CUMSUM_ASCENDC_ENV)
+        and dg.dim() == 3
+        and dg.dtype == torch.float32
+        and _is_power_of_two(int(chunk_size))
     )
+    if should_try_ascendc and _probe_bwd_cumsum_ascendc(dg.device):
+        try:
+            dg_ascendc = dg.transpose(1, 2).contiguous()
+            dg_ascendc = chunk_local_cumsum_ascendc(
+                dg_ascendc,
+                chunk_size=chunk_size,
+                reverse=True,
+                cu_seqlens=cu_seqlens,
+                chunk_indices_out=chunk_indices,
+                head_first=True,
+                output_dtype=torch.float32,
+            )
+            return dg_ascendc.transpose(1, 2).contiguous()
+        except Exception as exc:
+            _BWD_CUMSUM_ASCENDC_AVAILABLE = False
+            _BWD_CUMSUM_ASCENDC_UNAVAILABLE_REASON = str(exc).splitlines()[0]
+            fallback_reason = _BWD_CUMSUM_ASCENDC_UNAVAILABLE_REASON
+            try:
+                torch.npu.synchronize()
+            except Exception:
+                pass
+    elif should_try_ascendc:
+        fallback_reason = _BWD_CUMSUM_ASCENDC_UNAVAILABLE_REASON
 
-    dg_triton = dg.transpose(1, 2).contiguous()
+    if fallback_reason:
+        warnings.warn(
+            "AscendC backward chunk_local_cumsum is unavailable; "
+            "falling back to Triton. "
+            f"Reason: {fallback_reason}",
+            RuntimeWarning,
+        )
+
     return triton_chunk_local_cumsum(
-        dg_triton,
+        dg,
         chunk_size=chunk_size,
         reverse=True,
         cu_seqlens=cu_seqlens,
@@ -1004,6 +1115,8 @@ def flash_chunk_gated_delta_rule_bwd(
         chunk_indices=_chunk_list(chunk_indices_list, chunk_size),
     )
 
+    dg2 = dg2.transpose(1, 2).contiguous()
+    dg = dg.transpose(1, 2).contiguous()
     dk.add_(dk2)
     dg.add_(dg2)
     if dg.dtype != torch.float32:
