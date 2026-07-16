@@ -248,6 +248,9 @@ public:
                     AscendC::Cast(gkLastUbTensor, gkInputUbTensor, AscendC::RoundMode::CAST_NONE, mActualThisSubBlock);
                 }
                 AscendC::PipeBarrier<PIPE_V>();
+                AscendC::Muls(gkLastUbTensor, gkLastUbTensor, 0.6931471805599453f,
+                              mActualThisSubBlock);
+                AscendC::PipeBarrier<PIPE_V>();
                 AscendC::Exp(gkLastUbTensor, gkLastUbTensor, mActualThisSubBlock);
                 AscendC::PipeBarrier<PIPE_V>();
 
@@ -360,6 +363,9 @@ public:
                 if constexpr(!std::is_same<GElementInput, float>::value) {
                     AscendC::Cast(gkLastUbTensor, gkInputUbTensor, AscendC::RoundMode::CAST_NONE, rowsThisTile);
                 }
+                AscendC::PipeBarrier<PIPE_V>();
+                AscendC::Muls(gkLastUbTensor, gkLastUbTensor, 0.6931471805599453f,
+                              rowsThisTile);
                 AscendC::PipeBarrier<PIPE_V>();
                 AscendC::Exp(gkLastUbTensor, gkLastUbTensor, rowsThisTile);
                 AscendC::PipeBarrier<PIPE_V>();

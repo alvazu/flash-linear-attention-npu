@@ -741,6 +741,11 @@ def npu_chunk_kda_fwd(
             seq_chunks = (seq_len + chunk_size - 1) // chunk_size
             if local_chunk < 0 or local_chunk >= seq_chunks:
                 raise RuntimeError("npu_chunk_kda_fwd: chunk_indices chunk_id is out of range.")
+        canonical_chunk_indices = _kda_build_chunk_indices(cu_seqlens_for_call, chunk_size)
+        if chunk_indices_for_call != canonical_chunk_indices:
+            raise RuntimeError(
+                "npu_chunk_kda_fwd: chunk_indices must use canonical sequence-major chunk order."
+            )
     total_chunks = _kda_total_chunks(batch, seqlen, chunk_size, cu_seqlens_for_call, chunk_indices_for_call)
     if cu_seqlens_for_call is not None and seq_num > 1024:
         raise RuntimeError(

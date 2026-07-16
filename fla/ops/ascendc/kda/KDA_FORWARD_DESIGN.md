@@ -119,7 +119,11 @@ BNSD 和 NTD 是性能布局，适用于上游 causal conv 已经完成数据排
 
 当前 TND 兼容布局仅支持 `H=1` 的 rank3 输入。多 K head 的 rank3 输入必须使用 NTD 性能布局 `[H, T, D]`；host 侧会直接拦截 `layout=TND && H>1`，避免进入 `fwd_h` kernel 后触发非法访存。当前 `H/HV` 均要求不超过 128。
 
-变长序列（varlen）单次调用最多支持 1024 条序列、4096 个 chunk。超过容量时需要在序列边界拆分请求；稳定 Python 入口和 L2 接口都会在下发 kernel 前返回明确的参数错误。空序列仍按 `cu_seqlens` 非递减语义支持，不占用 chunk。
+变长序列（varlen）单次调用最多支持 1024 条序列，不限制单条序列或单次调用的 chunk 数。
+kernel 的 tiling 仅保存每条序列的起止位置与累计 chunk 偏移，通过二分定位当前 chunk，避免把
+逐 chunk metadata 塞入 tiling。显式传入的 `chunk_indices` 必须是按 sequence-major 排列的规范序列
+`(seq_id, local_chunk_id)`；省略时由稳定 Python 入口和 L2 接口按同一规则生成。空序列仍按
+`cu_seqlens` 非递减语义支持，不占用 chunk。
 
 支持的数据类型（dtype）语义：
 
@@ -397,15 +401,21 @@ UB 使用原则：
 
 性能验证使用 `msopprof --aic-metrics=BasicInfo`：
 
-- BNSD `B=1, H_K=1, H_V=2, T=16384, K=128, V=128, chunk_size=64`：相关 KDA+GDN 平均耗时 `3.05 ms`；`KdaLayoutSwap12` 次数为 `0`。
-- BNSD `B=1, H_K=32, H_V=64, T=4096, K=128, V=128, chunk_size=64`：相关 KDA+GDN 平均耗时 `13.60 ms`；`KdaLayoutSwap12` 次数为 `0`。
+- BSND `B=1, H_K=1, H_V=2, T=16384, K=128, V=128, chunk_size=64`：三段
+  `ChunkKdaFwd` 与 `ChunkGatedDeltaRuleFwdH` 平均合计 `4.85 ms`，布局转换平均合计
+  `3.12 ms`，完整已知算子链平均合计 `7.98 ms`。
+- NTD `B=1, H_K=H_V=32, T=65536, K=128, V=128, chunk_size=64`，64 条平均长度
+  1024 且带随机扰动的变长序列：三段 `ChunkKdaFwd` 与 `ChunkGatedDeltaRuleFwdH` 平均合计
+  `212.06 ms`；该性能布局没有触发 `KdaLayoutSwap12`。
 
 已知验证边界：
 
 - 高 `K/V` 的非 chunk 对齐 `cu_seqlens` 已改为由 L2 一次性规范化 chunk 元数据，并通过 tiling 下发紧凑索引；kernel 热点循环不再逐项从 GM 搬运 `int64` 元数据。`T=131072, H_K=H_V=2, K=V=128, chunk_size=64` 的 BF16 模型形状已覆盖非对齐尾块、非空 `initial_state` 和 `initial_state=None`，未再出现 AIV timeout。
-- 该紧凑 tiling 元数据路径的单次调用容量为 1024 条序列、4096 个 chunk；更大请求需要按完整序列边界拆分，不能截断单条序列的状态传播。
+- 该紧凑 tiling 元数据路径单次调用最多支持 1024 条序列，不限制单条序列或单次调用的
+  chunk 数；序列长度不会因为 tiling 容量被截断。
 - 当前 PR 有意不验证 `V=256`。
-- `return_intermediate=True` 下的中间量导出仍需单独看护无效区、layout 和 dtype 语义。若 `h` 中间量出现无效区极值，不应直接等价为 `final_state` 错误，需要按公开输出语义和有效区逐项确认。
+- `return_intermediate=True` 已覆盖 BSND、BNSD、TND、NTD、FP16/BF16、尾块和模型长序列；
+  `Aqk/Akk/w/u/qg/kg/v_new/h` 的无效上三角区域按接口语义清零。
 
 ## 8. 开发与验证闭环
 

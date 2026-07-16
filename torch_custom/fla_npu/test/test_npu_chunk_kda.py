@@ -34,7 +34,6 @@ MODEL_SHAPE_CASE = {
     "seed": 20260711,
 }
 MODEL_SHAPE_DUMP = pathlib.Path(os.environ.get("KDA_MODEL_SHAPE_DUMP", "/tmp/kda_model_shape_case.pt"))
-RUN_MODEL_SHAPE_TEST_ENV = "RUN_KDA_MODEL_SHAPE_TEST"
 STAT_SAMPLE_COUNT = int(os.environ.get("KDA_STAT_SAMPLE_COUNT", "262144"))
 REFERENCE_NUM_THREADS = int(os.environ.get("KDA_REFERENCE_NUM_THREADS", "16"))
 
@@ -230,9 +229,6 @@ def _run_chunk_kda_fwd_model_shape_with_stats(
     device = _device(device_id)
     if device.type == "cpu":
         print("skip model-shape stats test on CPU")
-        return
-    if os.environ.get(RUN_MODEL_SHAPE_TEST_ENV) != "1":
-        print(f"skip model-shape stats test; set {RUN_MODEL_SHAPE_TEST_ENV}=1 to enable")
         return
 
     dump_path = pathlib.Path(dump_path) if dump_path is not None else MODEL_SHAPE_DUMP
@@ -1154,7 +1150,7 @@ def test_chunk_kda_fwd_invalid_chunk_indices_rejected():
     if device.type == "cpu":
         return
     q, k, v, gk, beta, _ = _make_inputs(device, h=1, hv=2, t=128, dtype=torch.float16)
-    invalid_indices = ((0, 0, 1), (0, 0), (0, 0, 0, 2), (2, 0, 0, 1))
+    invalid_indices = ((0, 0, 1), (0, 0), (0, 0, 0, 2), (2, 0, 0, 1), (1, 0, 0, 0))
     for indices in invalid_indices:
         try:
             fla_ascendc.chunk_kda_fwd(
@@ -1206,24 +1202,50 @@ def test_chunk_gdn_fwd_h_gk_only_matches_neutral_g():
     if device.type == "cpu":
         return
     torch.manual_seed(20260715)
-    b, h, hv, t, kdim, vdim = 1, 1, 2, 64, 128, 128
-    k = (torch.randn(b, h, t, kdim, dtype=torch.float16) * 0.02).to(device)
+    b, h, hv, t, kdim, vdim = 1, 2, 2, 128, 128, 128
+    raw_k = torch.randn(b, h, t, kdim, dtype=torch.float16) * 0.02
     w = (torch.randn(b, hv, t, kdim, dtype=torch.float16) * 0.02).to(device)
     u = (torch.randn(b, hv, t, vdim, dtype=torch.float16) * 0.02).to(device)
-    gk = (torch.randn(b, hv, t, kdim, dtype=torch.float32) * 0.001).cumsum(dim=2).to(device)
+    gk_steps = -(torch.rand(b, hv, t // 64, 64, kdim, dtype=torch.float32) * 0.01 + 0.002)
+    gk_chunks = gk_steps.cumsum(dim=3)
+    kg = (raw_k.float().reshape(b, h, t // 64, 64, kdim)
+          * torch.exp2(gk_chunks[:, :, :, -1:, :] - gk_chunks)).reshape_as(raw_k)
+    kg = kg.to(torch.float16)
+    gk = gk_chunks.reshape(b, hv, t, kdim)
+
+    state = torch.zeros(b, hv, kdim, vdim, dtype=torch.float32)
+    h_ref = torch.zeros(b, hv, t // 64, kdim, vdim, dtype=torch.float32)
+    v_new_ref = torch.zeros(b, hv, t, vdim, dtype=torch.float32)
+    for chunk_idx in range(t // 64):
+        start = chunk_idx * 64
+        end = start + 64
+        h_ref[:, :, chunk_idx] = state
+        v_new = u.cpu().float()[:, :, start:end] - torch.einsum(
+            "bhtk,bhkv->bhtv", w.cpu().float()[:, :, start:end], state,
+        )
+        v_new_ref[:, :, start:end] = v_new
+        state = state * torch.exp2(gk[:, :, end - 1]).unsqueeze(-1) + torch.einsum(
+            "bhtk,bhtv->bhkv", kg.float()[:, :, start:end], v_new,
+        )
+
+    kg = kg.to(device)
+    gk = gk.to(device)
     neutral_g = torch.zeros(b, hv, t, dtype=torch.float32, device=device)
 
     gk_only = fla_ascendc.chunk_gated_delta_rule_fwd_h(
-        k, w, u, gk=gk, output_final_state=True, chunk_size=64,
+        kg, w, u, gk=gk, output_final_state=True, chunk_size=64,
     )
     explicit_neutral = fla_ascendc.chunk_gated_delta_rule_fwd_h(
-        k, w, u, g=neutral_g, gk=gk, output_final_state=True, chunk_size=64,
+        kg, w, u, g=neutral_g, gk=gk, output_final_state=True, chunk_size=64,
     )
     for name, outputs in (("gk-only", gk_only), ("explicit-neutral", explicit_neutral)):
         assert outputs[2].dtype == torch.float32, f"{name} final_state must be float32 without initial_state"
         assert torch.isfinite(outputs[2]).all().item(), f"{name} final_state must be finite"
     for name, actual, expected in zip(("h", "v_new", "final_state"), gk_only, explicit_neutral):
         _assert_close(f"gk-only {name}", actual, expected, rtol=0, atol=0)
+    _assert_close("gk h formula", gk_only[0], h_ref.to(torch.float16), rtol=2e-2, atol=2e-3)
+    _assert_close("gk v_new formula", gk_only[1], v_new_ref.to(torch.float16), rtol=2e-2, atol=2e-3)
+    _assert_close("gk final_state formula", gk_only[2], state, rtol=2e-2, atol=2e-3)
 
 
 def _run_single_test_in_subprocess(name):

@@ -93,15 +93,6 @@ public:
 
         shareBuffer_ = resource.ubBuf.template GetBufferByByte<uint8_t>(SHARE_BUF_OFFSET);
 
-        if constexpr (kGated) {
-            gkUbTensor_ping = resource.ubBuf.template GetBufferByByte<float>(PING_BUF_0_OFFSET);
-            gkUbTensor_pong = resource.ubBuf.template GetBufferByByte<float>(PONG_BUF_0_OFFSET);
-            gkInputUbTensor_ping = resource.ubBuf.template GetBufferByByte<GElementInput>(PING_BUF_2_OFFSET);
-            gkInputUbTensor_pong = resource.ubBuf.template GetBufferByByte<GElementInput>(PONG_BUF_2_OFFSET);
-            gkDecayOutputUbTensor_ping = resource.ubBuf.template GetBufferByByte<VElementOutput>(PING_BUF_2_OFFSET);
-            gkDecayOutputUbTensor_pong = resource.ubBuf.template GetBufferByByte<VElementOutput>(PONG_BUF_2_OFFSET);
-        }
-
     }
 
     CATLASS_DEVICE
@@ -195,10 +186,6 @@ public:
 
         AscendC::Sub<float>(gUbTensor, gLastUbTensor, gUbTensor, mActual);
         AscendC::PipeBarrier<PIPE_V>();
-        if constexpr (kGated) {
-            AscendC::SetFlag<AscendC::HardEvent::V_MTE2>(EVENT_ID1 + pingpongFlag);
-        }
-
         AscendC::Exp(gUbTensor, gUbTensor, mActual);
         AscendC::PipeBarrier<PIPE_V>();
     }
@@ -334,84 +321,16 @@ public:
             AscendC::SetFlag<AscendC::HardEvent::MTE3_MTE2>(EVENT_ID1 + pingpongFlag);
 
             if constexpr (kGated) {
-                AscendC::LocalTensor<float> gkUbTensor = isPing ? gkUbTensor_ping : gkUbTensor_pong;
-                AscendC::LocalTensor<GElementInput> gkInputUbTensor = isPing ? gkInputUbTensor_ping : gkInputUbTensor_pong;
-                AscendC::LocalTensor<VElementOutput> gkDecayOutputUbTensor = isPing ? gkDecayOutputUbTensor_ping : gkDecayOutputUbTensor_pong;
-
-                AscendC::GlobalTensor<GElementInput> gkInputThisSubBlock = gkInput[rowBegin * nkActual];
-                AscendC::GlobalTensor<GElementInput> gkLastInput = gkInput[(mActual - 1) * nkActual];
                 AscendC::GlobalTensor<VElementOutput> kInputThisSubBlock = kInput[rowBegin * nkActual];
                 AscendC::GlobalTensor<VElementOutput> kDecayWorkspaceThisSubBlock = kDecayWorkspace[rowBegin * nkActual];
-
-                // Phase A: gkUbTensor holds gk float data (MTE2→V→Cast)
-                AscendC::WaitFlag<AscendC::HardEvent::V_MTE2>(EVENT_ID0 + pingpongFlag); // reuse wsUB
-                AscendC::WaitFlag<AscendC::HardEvent::MTE3_MTE2>(EVENT_ID1 + pingpongFlag); // reuse uUB
-                if constexpr(std::is_same<GElementInput, float>::value) {
-                    AscendC::DataCopy(gkUbTensor, gkInputThisSubBlock, mActualThisSubBlock * nkActual); // [cs, k]
-                } else {
-                    AscendC::DataCopy(gkInputUbTensor, gkInputThisSubBlock, mActualThisSubBlock * nkActual);
-                }
-                AscendC::SetFlag<AscendC::HardEvent::MTE2_V>(EVENT_ID1 + pingpongFlag);
-                AscendC::WaitFlag<AscendC::HardEvent::MTE2_V>(EVENT_ID1 + pingpongFlag);
-                if constexpr(!std::is_same<GElementInput, float>::value) {
-                    AscendC::Cast(gkUbTensor, gkInputUbTensor, AscendC::RoundMode::CAST_NONE, mActualThisSubBlock * nkActual);
-                    AscendC::PipeBarrier<PIPE_V>();
-                }
-                AscendC::SetFlag<AscendC::HardEvent::V_MTE2>(EVENT_ID0 + pingpongFlag);
-                AscendC::WaitFlag<AscendC::HardEvent::V_MTE2>(EVENT_ID0 + pingpongFlag);
-                // Phase B: gLastUbTensor holds gk_last [K] (reuse gInputUb for half→float cast)
-                AscendC::WaitFlag<AscendC::HardEvent::V_MTE2>(EVENT_ID1 + pingpongFlag); // reuse gLast
-                if constexpr(std::is_same<GElementInput, float>::value) {
-                    AscendC::DataCopy(gLastUbTensor, gkLastInput, nkActual); // [k]
-                } else {
-                    AscendC::DataCopy(gkInputUbTensor, gkLastInput, nkActual);
-                }
-                AscendC::SetFlag<AscendC::HardEvent::MTE2_V>(EVENT_ID1 + pingpongFlag);
-                AscendC::WaitFlag<AscendC::HardEvent::MTE2_V>(EVENT_ID1 + pingpongFlag);
-                if constexpr(!std::is_same<GElementInput, float>::value) {
-                    AscendC::Cast(gLastUbTensor, gkInputUbTensor, AscendC::RoundMode::CAST_NONE, nkActual);
-                }
-                AscendC::SetFlag<AscendC::HardEvent::V_MTE2>(EVENT_ID1 + pingpongFlag);
-
-                // Phase C: calcUbTensor holds gk_decay (Broadcast→Sub→Exp)
-                //          gkUbTensor still holds gk float (read by Sub, then freed)
-                uint32_t gkBrcReptime = (mActualThisSubBlock + 8 - 1) / 8;
-                uint32_t dstShapeGk[2] = {gkBrcReptime * 8, nkActual};
-                uint32_t srcShapeGk[2] = {1, nkActual};
-                AscendC::PipeBarrier<PIPE_V>();
-                AscendC::Broadcast<float, 2, 0>(calcUbTensor, gLastUbTensor, dstShapeGk, srcShapeGk, shareBuffer_); // [cs , k]
-                AscendC::PipeBarrier<PIPE_V>();
-
-                AscendC::Sub<float>(calcUbTensor, calcUbTensor, gkUbTensor, mActualThisSubBlock * nkActual);
-                AscendC::PipeBarrier<PIPE_V>();
-                AscendC::SetFlag<AscendC::HardEvent::V_MTE2>(EVENT_ID0 + pingpongFlag);
-                AscendC::Exp<float>(calcUbTensor, calcUbTensor, mActualThisSubBlock * nkActual);
-                AscendC::PipeBarrier<PIPE_V>();
-                // Phase D: gkUbTensor reused as k float buffer (Cast k→float)
-                AscendC::WaitFlag<AscendC::HardEvent::V_MTE2>(EVENT_ID1 + pingpongFlag);
-                AscendC::WaitFlag<AscendC::HardEvent::V_MTE2>(EVENT_ID0 + pingpongFlag);
-                if constexpr(std::is_same<VElementOutput, float>::value) {
-                    AscendC::DataCopy(gkUbTensor, kInputThisSubBlock, mActualThisSubBlock * nkActual);
-                } else {
-                    AscendC::PipeBarrier<PIPE_MTE2>(); // same UB offset as gkInputUb
-                    AscendC::DataCopy(gkDecayOutputUbTensor, kInputThisSubBlock, mActualThisSubBlock * nkActual);
-                }
-                AscendC::SetFlag<AscendC::HardEvent::MTE2_V>(EVENT_ID1 + pingpongFlag);
-                AscendC::WaitFlag<AscendC::HardEvent::MTE2_V>(EVENT_ID1 + pingpongFlag);
-                if constexpr(!std::is_same<VElementOutput, float>::value) {
-                    AscendC::Cast(gkUbTensor, gkDecayOutputUbTensor, AscendC::RoundMode::CAST_NONE, mActualThisSubBlock * nkActual);
-                }
-
-                AscendC::SetFlag<AscendC::HardEvent::V_MTE2>(EVENT_ID0 + pingpongFlag);
-                AscendC::PipeBarrier<PIPE_V>();
-                // k_decay = k_float * gk_decay
-                AscendC::Mul<float>(calcUbTensor, gkUbTensor, calcUbTensor, mActualThisSubBlock * nkActual);
-                AscendC::PipeBarrier<PIPE_V>();
-                AscendC::Cast(gkDecayOutputUbTensor, calcUbTensor, AscendC::RoundMode::CAST_RINT, mActualThisSubBlock * nkActual);
-                AscendC::PipeBarrier<PIPE_V>();
-                AscendC::SetFlag<AscendC::HardEvent::V_MTE3>(EVENT_ID1 + pingpongFlag);
-                AscendC::WaitFlag<AscendC::HardEvent::V_MTE3>(EVENT_ID1 + pingpongFlag);
-                AscendC::DataCopy(kDecayWorkspaceThisSubBlock, gkDecayOutputUbTensor, mActualThisSubBlock * nkActual);
+                // KDA passes kg = k * exp2(g_last - gk). Keep that decay exactly once.
+                AscendC::WaitFlag<AscendC::HardEvent::MTE3_MTE2>(EVENT_ID1 + pingpongFlag);
+                AscendC::DataCopy(vNewOutputUbTensor, kInputThisSubBlock,
+                                  mActualThisSubBlock * nkActual);
+                AscendC::SetFlag<AscendC::HardEvent::MTE2_MTE3>(EVENT_ID1 + pingpongFlag);
+                AscendC::WaitFlag<AscendC::HardEvent::MTE2_MTE3>(EVENT_ID1 + pingpongFlag);
+                AscendC::DataCopy(kDecayWorkspaceThisSubBlock, vNewOutputUbTensor,
+                                  mActualThisSubBlock * nkActual);
                 AscendC::SetFlag<AscendC::HardEvent::MTE3_MTE2>(EVENT_ID1 + pingpongFlag);
 
                 Arch::CrossCoreSetFlag<0x2, PIPE_MTE3>(vec1Done);
@@ -487,8 +406,10 @@ public:
             AscendC::DataCopy(vnewdecayOutput[l1Addr], vNewDecayUbTensor, intriParams);
             AscendC::SetFlag<AscendC::HardEvent::MTE3_V>(EVENT_ID1 + pingpongFlag);
             AscendC::WaitFlag<AscendC::HardEvent::MTE3_V>(EVENT_ID1 + pingpongFlag);
-            if (rowStart + rowsThisTile >= rowEnd) {
-                Arch::CrossCoreSetFlag<0x2, PIPE_MTE3>(vec1Done);
+            if constexpr (!kGated) {
+                if (rowStart + rowsThisTile >= rowEnd) {
+                    Arch::CrossCoreSetFlag<0x2, PIPE_MTE3>(vec1Done);
+                }
             }
 
             AscendC::Cast(vNewOutputUbTensor, wsUbTensorThisTile, AscendC::RoundMode::CAST_RINT, rowsThisTile * nvActual);
@@ -499,6 +420,23 @@ public:
             CopyUbToGm(vnewOutputThisTile, vNewOutputUbTensor, rowsThisTile, nvActual, inputStride);
             AscendC::SetFlag<AscendC::HardEvent::MTE3_MTE2>(EVENT_ID1 + pingpongFlag);
             rowStart += rowsThisTile;
+        }
+
+        if constexpr (kGated) {
+            uint32_t mActualThisSubBlock = rowEnd - rowBegin;
+            AscendC::GlobalTensor<VElementOutput> kInputThisSubBlock =
+                kInput[rowBegin * nkActual];
+            AscendC::GlobalTensor<VElementOutput> kDecayWorkspaceThisSubBlock =
+                kDecayWorkspace[rowBegin * nkActual];
+            AscendC::WaitFlag<AscendC::HardEvent::MTE3_MTE2>(EVENT_ID1 + pingpongFlag);
+            CopyGmToUb(vNewOutputUbTensor, kInputThisSubBlock, mActualThisSubBlock,
+                       nkActual, nkActual);
+            AscendC::SetFlag<AscendC::HardEvent::MTE2_MTE3>(EVENT_ID1 + pingpongFlag);
+            AscendC::WaitFlag<AscendC::HardEvent::MTE2_MTE3>(EVENT_ID1 + pingpongFlag);
+            CopyUbToGm(kDecayWorkspaceThisSubBlock, vNewOutputUbTensor,
+                       mActualThisSubBlock, nkActual, nkActual);
+            AscendC::SetFlag<AscendC::HardEvent::MTE3_MTE2>(EVENT_ID1 + pingpongFlag);
+            Arch::CrossCoreSetFlag<0x2, PIPE_MTE3>(vec1Done);
         }
 
         if (rowBegin < rowEnd) {
@@ -529,13 +467,6 @@ private:
     AscendC::LocalTensor<GElementInput> gInputUbTensor_pong;
     AscendC::LocalTensor<VElementOutput> vNewOutputUbTensor_pong;
     AscendC::LocalTensor<VElementOutput> vNewDecayUbTensor_pong;
-
-    AscendC::LocalTensor<float> gkUbTensor_ping;
-    AscendC::LocalTensor<float> gkUbTensor_pong;
-    AscendC::LocalTensor<GElementInput> gkInputUbTensor_ping;
-    AscendC::LocalTensor<GElementInput> gkInputUbTensor_pong;
-    AscendC::LocalTensor<VElementOutput> gkDecayOutputUbTensor_ping;
-    AscendC::LocalTensor<VElementOutput> gkDecayOutputUbTensor_pong;
 
     AscendC::LocalTensor<uint8_t> shareBuffer_;
 

@@ -9,6 +9,7 @@
 
 #include "chunk_kda_fwd_tiling.h"
 #include <algorithm>
+#include <array>
 #include <register/op_impl_registry.h>
 #include "tiling/platform/platform_ascendc.h"
 
@@ -72,11 +73,34 @@ ge::graphStatus Tiling4ChunkKdaFwd(gert::TilingContext *context)
     bool isVarLen = context->GetOptionalInputTensor(INPUT_CU_SEQLENS_IDX) != nullptr;
     int64_t batch = qShape.GetDim(DIM_B);
     int64_t seqNum = batch;
+    std::array<int64_t, KDA_MAX_TILING_SEQUENCES> seqStart{};
+    std::array<int64_t, KDA_MAX_TILING_SEQUENCES> seqEnd{};
+    std::array<int64_t, KDA_MAX_TILING_SEQUENCE_OFFSETS> seqChunkOffset{};
     if (isVarLen) {
         auto cuTensor = context->GetOptionalInputTensor(INPUT_CU_SEQLENS_IDX);
         seqNum = cuTensor->GetStorageShape().GetDim(0) - 1;
         auto chunkMetadata = context->GetOptionalInputTensor(INPUT_CHUNK_INDICES_IDX);
-        if (chunkMetadata == nullptr || chunkMetadata->GetStorageShape().GetShapeSize() != totalChunks * 4) {
+        if (seqNum <= 0 || seqNum > KDA_MAX_TILING_SEQUENCES || chunkMetadata == nullptr ||
+            chunkMetadata->GetStorageShape().GetShapeSize() != totalChunks * 4) {
+            return ge::GRAPH_FAILED;
+        }
+        const int64_t *cu = cuTensor->GetData<int64_t>();
+        if (cu == nullptr) {
+            return ge::GRAPH_FAILED;
+        }
+        int64_t chunkOffset = 0;
+        for (int64_t seq = 0; seq < seqNum; ++seq) {
+            if (cu[seq] < 0 || cu[seq + 1] < cu[seq]) {
+                return ge::GRAPH_FAILED;
+            }
+            seqStart[seq] = cu[seq];
+            seqEnd[seq] = cu[seq + 1];
+            seqChunkOffset[seq] = chunkOffset;
+            const int64_t seqLength = cu[seq + 1] - cu[seq];
+            chunkOffset += (seqLength + chunkSize - 1) / chunkSize;
+        }
+        seqChunkOffset[seqNum] = chunkOffset;
+        if (chunkOffset != totalChunks) {
             return ge::GRAPH_FAILED;
         }
     }
@@ -114,6 +138,9 @@ ge::graphStatus Tiling4ChunkKdaFwd(gert::TilingContext *context)
     tiling.set_gateDataType(DTypeCode(gDesc->GetDataType()));
     tiling.set_usedCoreNum(blockDim == 0 ? 1 : blockDim);
     tiling.set_stage(stage);
+    tiling.set_seqStart(seqStart.data());
+    tiling.set_seqEnd(seqEnd.data());
+    tiling.set_seqChunkOffset(seqChunkOffset.data());
 
     if (qDesc->GetDataType() == ge::DT_FLOAT) {
         context->SetTilingKey(0);

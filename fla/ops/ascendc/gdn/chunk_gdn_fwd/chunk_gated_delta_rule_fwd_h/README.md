@@ -109,7 +109,7 @@ aclnnStatus aclnnChunkGatedDeltaRuleFwdH(
 
 | 参数名 | 输入/输出 | 必选/可选 | 描述 | 数据类型 | 数据格式 | 维度（Shape） | 非连续 Tensor |
 |---|---|---|---|---|---|---|---|
-| `k` | 输入 | 必选 | Key 输入张量 | `FLOAT16`、`BFLOAT16` | `ND` | `[B, HK, T, K]` | 支持 |
+| `k` | 输入 | 必选 | Key 输入张量；`gkOptional` 路径传入已完成块内门控的 `kg` | `FLOAT16`、`BFLOAT16` | `ND` | `[B, HK, T, K]` | 支持 |
 | `w` | 输入 | 必选 | WY 分解中的 W 矩阵 | `FLOAT16`、`BFLOAT16` | `ND` | `[B, HV, T, K]` | 支持 |
 | `u` | 输入 | 必选 | 修正后的 Value 张量 | `FLOAT16`、`BFLOAT16` | `ND` | `[B, HV, T, V]` | 支持 |
 | `gOptional` | 输入 | 可选；与 `gkOptional` 至少提供一个 | 标量 Gate 输入张量 | `FLOAT16`、`BFLOAT16`、`FLOAT` | `ND` | `[B, HV, T]` | 支持 |
@@ -204,15 +204,24 @@ aclnnStatus aclnnChunkGatedDeltaRuleFwdH(
 
 ### 4.4 数值语义
 
-- 该算子的核心递推公式为：
+- 标量门控 `gOptional` 路径的核心递推公式为：
 
 ```text
-S_{[c+1]} = exp(g_{[c]}) * S_{[c]} + k_{[c]}^T @ u_{[c]}
+v_new[c] = u[c] - w[c] @ S[c]
+k_decay[c, i] = k[c, i] * exp(g_last[c] - g[c, i])
+S[c+1] = exp(g_last[c]) * S[c] + k_decay[c]^T @ v_new[c]
 ```
 
-其中：
-- `g_{[c]}` 为第 `c` 个分块的门控衰减值（在 log 空间中累加后取 exp）
-- `k_{[c]}^T @ u_{[c]}` 为当前分块的键值外积累积
+逐通道门控 `gkOptional` 用于 KDA 状态传播。该路径要求 `k` 参数传入上游已计算的
+`kg = k * exp2(gk_last - gk)`，本算子不得再次对 `kg` 施加块内门控：
+
+```text
+v_new[c] = u[c] - w[c] @ S[c]
+S[c+1] = exp2(gk_last[c]) * S[c] + kg[c]^T @ v_new[c]
+```
+
+其中 `exp2(gk_last[c])` 沿 K 维逐通道作用于旧状态。`useExp2` 属性仍是标量门控路径的
+预留属性；`gkOptional` 的上述 `exp2` 语义固定启用，不受该预留属性控制。
 
 - 当前算子实现配置为：
 

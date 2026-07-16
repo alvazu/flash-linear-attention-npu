@@ -187,6 +187,17 @@ aclnnStatus KdaFwdCheckChunkIndices(const aclIntArray *chunkIndicesOptional,
         CHECK_COND(localChunk >= 0 && localChunk < seqChunks, ACLNN_ERR_PARAM_INVALID,
                    "chunkIndicesOptional chunk_id is outside the selected sequence.");
     }
+    size_t expectedIdx = 0;
+    for (int64_t seq = 0; seq < seqNum; ++seq) {
+        int64_t seqLength = cu[seq + 1] - cu[seq];
+        int64_t seqChunks = (seqLength + chunkSize - 1) / chunkSize;
+        for (int64_t localChunk = 0; localChunk < seqChunks; ++localChunk) {
+            CHECK_COND(indices[expectedIdx] == seq && indices[expectedIdx + 1] == localChunk,
+                       ACLNN_ERR_PARAM_INVALID,
+                       "chunkIndicesOptional must use canonical sequence-major chunk order.");
+            expectedIdx += 2;
+        }
+    }
     return ACLNN_SUCCESS;
 }
 
