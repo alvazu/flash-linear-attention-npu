@@ -59,8 +59,6 @@ _CUMSUM_KKT_ASCENDC_AVAILABLE: Optional[bool] = None
 _CUMSUM_KKT_ASCENDC_UNAVAILABLE_REASON = ""
 _BWD_CUMSUM_ASCENDC_AVAILABLE: Optional[bool] = None
 _BWD_CUMSUM_ASCENDC_UNAVAILABLE_REASON = ""
-_CUMSUM_KKT_ASCENDC_ENV = "GDR_USE_ASCENDC_CUMSUM_KKT"
-_BWD_CUMSUM_ASCENDC_ENV = "GDR_USE_ASCENDC_BWD_CUMSUM"
 
 
 def _make_gate(shape: tuple[int, ...], dtype: torch.dtype, device: str, gate_function: str) -> torch.Tensor:
@@ -113,22 +111,6 @@ def _as_int_list(value: Optional[list[int] | torch.Tensor]) -> Optional[list[int
     if isinstance(value, torch.Tensor):
         return [int(x) for x in value.detach().cpu().flatten().tolist()]
     return [int(x) for x in value]
-
-
-def _env_flag_enabled(name: str, default: bool = True) -> bool:
-    value = os.environ.get(name)
-    if value is None:
-        return default
-    normalized = value.strip().lower()
-    if normalized in ("1", "true", "yes", "on", "enable", "enabled"):
-        return True
-    if normalized in ("0", "false", "no", "off", "disable", "disabled"):
-        return False
-    warnings.warn(
-        f"Ignoring invalid {name}={value!r}; expected one of 1/0, true/false, yes/no, on/off.",
-        RuntimeWarning,
-    )
-    return default
 
 
 def _is_power_of_two(value: int) -> bool:
@@ -692,9 +674,6 @@ def _should_use_ascendc_cumsum_kkt(
 def _probe_cumsum_kkt_ascendc(device: torch.device, dtype: torch.dtype) -> bool:
     global _CUMSUM_KKT_ASCENDC_AVAILABLE, _CUMSUM_KKT_ASCENDC_UNAVAILABLE_REASON
 
-    if not _env_flag_enabled(_CUMSUM_KKT_ASCENDC_ENV):
-        _CUMSUM_KKT_ASCENDC_UNAVAILABLE_REASON = f"disabled by {_CUMSUM_KKT_ASCENDC_ENV}"
-        return False
     if _CUMSUM_KKT_ASCENDC_AVAILABLE is not None:
         return _CUMSUM_KKT_ASCENDC_AVAILABLE
 
@@ -740,7 +719,7 @@ def chunk_local_cumsum_kkt_auto(
     global _CUMSUM_KKT_ASCENDC_AVAILABLE, _CUMSUM_KKT_ASCENDC_UNAVAILABLE_REASON
 
     fallback_reason = ""
-    should_try_ascendc = _env_flag_enabled(_CUMSUM_KKT_ASCENDC_ENV) and _should_use_ascendc_cumsum_kkt(
+    should_try_ascendc = _should_use_ascendc_cumsum_kkt(
         k,
         g,
         beta,
@@ -815,9 +794,6 @@ def chunk_local_cumsum_kkt_auto(
 def _probe_bwd_cumsum_ascendc(device: torch.device) -> bool:
     global _BWD_CUMSUM_ASCENDC_AVAILABLE, _BWD_CUMSUM_ASCENDC_UNAVAILABLE_REASON
 
-    if not _env_flag_enabled(_BWD_CUMSUM_ASCENDC_ENV):
-        _BWD_CUMSUM_ASCENDC_UNAVAILABLE_REASON = f"disabled by {_BWD_CUMSUM_ASCENDC_ENV}"
-        return False
     if _BWD_CUMSUM_ASCENDC_AVAILABLE is not None:
         return _BWD_CUMSUM_ASCENDC_AVAILABLE
 
@@ -857,8 +833,7 @@ def chunk_local_cumsum_bwd_auto(
 
     fallback_reason = ""
     should_try_ascendc = (
-        _env_flag_enabled(_BWD_CUMSUM_ASCENDC_ENV)
-        and dg.dim() == 3
+        dg.dim() == 3
         and dg.dtype == torch.float32
         and _is_power_of_two(int(chunk_size))
     )
