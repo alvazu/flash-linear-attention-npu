@@ -65,6 +65,7 @@ protected:
     ge::graphStatus AnalyzeShapes();
     ge::graphStatus CalUbSize();
     ge::graphStatus GetScale();
+    ge::graphStatus GetStateStrides();
     ge::graphStatus GetOptionalInput();
     ge::graphStatus AnalyzeFormat();
     bool CheckFormat(ge::Format format, const std::string &Desc);
