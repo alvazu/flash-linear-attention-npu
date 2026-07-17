@@ -204,6 +204,9 @@ public:
         AscendC::SetFlag<AscendC::HardEvent::V_S>(EVENT_ID3 + pingpongFlag);
         AscendC::WaitFlag<AscendC::HardEvent::V_S>(EVENT_ID3 + pingpongFlag);
         float muls = glastUbTensor.GetValue(0);
+        if constexpr (kGated) {
+            AscendC::SetFlag<AscendC::HardEvent::S_MTE2>(EVENT_ID1 + pingpongFlag);
+        }
         AscendC::SetFlag<AscendC::HardEvent::S_V>(EVENT_ID3 + pingpongFlag);
         AscendC::WaitFlag<AscendC::HardEvent::S_V>(EVENT_ID3 + pingpongFlag);
 
@@ -242,6 +245,49 @@ public:
 
             AscendC::Muls(calcUbTensor, calcUbTensor, muls, rowsThisTile * nActual);
             AscendC::PipeBarrier<PIPE_V>();
+
+            if constexpr (kGated) {
+                AscendC::GlobalTensor<GElementInput> gkLastInput =
+                    gkInput[(chunkSize - 1) * kHeadDim + rowStart];
+                AscendC::LocalTensor<float> gkLastUbTensor =
+                    isPing ? gkLastUbTensor_ping : gkLastUbTensor_pong;
+                AscendC::LocalTensor<GElementInput> gkInputUbTensor =
+                    isPing ? gkInputUbTensor_ping : gkInputUbTensor_pong;
+
+                if (rowStart == rowBegin) {
+                    AscendC::WaitFlag<AscendC::HardEvent::S_MTE2>(EVENT_ID1 + pingpongFlag);
+                } else {
+                    AscendC::WaitFlag<AscendC::HardEvent::V_MTE2>(EVENT_ID1 + pingpongFlag);
+                }
+                if constexpr(std::is_same<GElementInput, float>::value) {
+                    AscendC::DataCopy(gkLastUbTensor, gkLastInput, rowsThisTile);
+                } else {
+                    AscendC::DataCopy(gkInputUbTensor, gkLastInput, rowsThisTile);
+                }
+                AscendC::SetFlag<AscendC::HardEvent::MTE2_V>(EVENT_ID2 + pingpongFlag);
+                AscendC::WaitFlag<AscendC::HardEvent::MTE2_V>(EVENT_ID2 + pingpongFlag);
+                if constexpr(!std::is_same<GElementInput, float>::value) {
+                    AscendC::Cast(gkLastUbTensor, gkInputUbTensor,
+                                  AscendC::RoundMode::CAST_NONE, rowsThisTile);
+                }
+                AscendC::PipeBarrier<PIPE_V>();
+                AscendC::Muls(gkLastUbTensor, gkLastUbTensor, 0.6931471805599453f,
+                              rowsThisTile);
+                AscendC::PipeBarrier<PIPE_V>();
+                AscendC::Exp(gkLastUbTensor, gkLastUbTensor, rowsThisTile);
+                AscendC::PipeBarrier<PIPE_V>();
+
+                uint32_t gkBrcReptime = (rowsThisTile + 8 - 1) / 8;
+                uint32_t dstShapeGk[2] = {gkBrcReptime * 8, nActual};
+                uint32_t srcShapeGk[2] = {gkBrcReptime * 8, 1};
+                AscendC::Broadcast<float, 2, 1>(hUpdateUbTensor, gkLastUbTensor,
+                                                dstShapeGk, srcShapeGk, shareBufferGk_);
+                AscendC::PipeBarrier<PIPE_V>();
+                AscendC::Mul(calcUbTensor, calcUbTensor, hUpdateUbTensor,
+                             rowsThisTile * nActual);
+                AscendC::PipeBarrier<PIPE_V>();
+                AscendC::SetFlag<AscendC::HardEvent::V_MTE2>(EVENT_ID1 + pingpongFlag);
+            }
 
             if (waitUpdateFromMte3) {
                 AscendC::WaitFlag<AscendC::HardEvent::MTE3_MTE2>(EVENT_ID0 + pingpongFlag);
@@ -298,6 +344,9 @@ public:
         } else {
             AscendC::WaitFlag<AscendC::HardEvent::MTE3_MTE2>(EVENT_ID2 + pingpongFlag);
             AscendC::SetFlag<AscendC::HardEvent::MTE3_MTE2>(EVENT_ID2 + pingpongFlag);
+        }
+        if constexpr (kGated) {
+            AscendC::WaitFlag<AscendC::HardEvent::V_MTE2>(EVENT_ID1 + pingpongFlag);
         }
 
     }

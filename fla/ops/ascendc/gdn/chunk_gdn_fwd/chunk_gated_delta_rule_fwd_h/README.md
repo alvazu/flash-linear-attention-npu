@@ -47,8 +47,8 @@ $$
  * k : required
  * w : required
  * u : required
- * gOptional : optional, only non-null aclTensor is supported
- * gkOptional : optional, reserved (must be nullptr)
+ * gOptional : optional scalar gate; either gOptional or gkOptional must be provided
+ * gkOptional : optional per-channel cumulative gate; either gOptional or gkOptional must be provided
  * initalStateOptional : optional
  * outputFinalState : required
  * chunkSize : required
@@ -109,11 +109,11 @@ aclnnStatus aclnnChunkGatedDeltaRuleFwdH(
 
 | 参数名 | 输入/输出 | 必选/可选 | 描述 | 数据类型 | 数据格式 | 维度（Shape） | 非连续 Tensor |
 |---|---|---|---|---|---|---|---|
-| `k` | 输入 | 必选 | Key 输入张量 | `FLOAT16`、`BFLOAT16` | `ND` | `[B, HK, T, K]` | 支持 |
+| `k` | 输入 | 必选 | Key 输入张量；`gkOptional` 路径传入已完成块内门控的 `kg` | `FLOAT16`、`BFLOAT16` | `ND` | `[B, HK, T, K]` | 支持 |
 | `w` | 输入 | 必选 | WY 分解中的 W 矩阵 | `FLOAT16`、`BFLOAT16` | `ND` | `[B, HV, T, K]` | 支持 |
 | `u` | 输入 | 必选 | 修正后的 Value 张量 | `FLOAT16`、`BFLOAT16` | `ND` | `[B, HV, T, V]` | 支持 |
-| `gOptional` | 输入 | 接口为可选；当前实现要求非空 | Gate 输入张量 | `FLOAT16`、`BFLOAT16`、`FLOAT` | `ND` | `[B, HV, T]` | 支持 |
-| `gkOptional` | 输入 | 接口为可选；当前实现要求传空 | 预留的逐通道门控张量 | `FLOAT16`、`BFLOAT16` | `ND` | 未启用 | - |
+| `gOptional` | 输入 | 可选；与 `gkOptional` 至少提供一个 | 标量 Gate 输入张量 | `FLOAT16`、`BFLOAT16`、`FLOAT` | `ND` | `[B, HV, T]` | 支持 |
+| `gkOptional` | 输入 | 可选；与 `gOptional` 至少提供一个 | 逐通道累计门控张量 | `FLOAT16`、`BFLOAT16`、`FLOAT` | `ND` | `[B, HV, T, K]` | 支持 |
 | `initalStateOptional` | 输入 | 可选 | 初始隐藏状态张量；不传则默认全零 | `FLOAT16`、`BFLOAT16`、`FLOAT` | `ND` | `[B, HV, K, V]` | 支持 |
 | `cuSeqlensOptional` | 输入 | 可选 | 变长序列的累计长度信息 | `INT64` | `ND` | 1 维 | - |
 | `chunkIndicesOptional` | 输入 | 可选 | 分块索引信息（`[token_batch_id, chunk_id]` 二元组扁平化） | `INT64` | `ND` | 1 维，长度需能被 2 整除 | - |
@@ -160,10 +160,10 @@ aclnnStatus aclnnChunkGatedDeltaRuleFwdH(
 
 ### 4.1 可选参数约束
 
-- `gOptional`：
-  - 接口层为可选，但当前实现要求传入有效张量（不可为空）
-- `gkOptional`：
-  - 接口层为可选；**当前实现要求传空指针，否则执行失败**
+- `gOptional` / `gkOptional`：
+  - 二者至少提供一个；仅提供 `gkOptional` 时，L2 接口自动生成零标量 gate 作为中性因子
+  - 同时提供时二者 dtype 必须一致
+  - `gkOptional` 形状为 `[B, HV, T, K]`，其中 `B/T/K` 与 `k` 对齐，`HV` 与 `u` 对齐
 - `initalStateOptional`：
   - 若不提供（传空指针），则默认初始状态为全零矩阵
   - 形状必须为 `[B, HV, K, V]`
@@ -181,6 +181,7 @@ aclnnStatus aclnnChunkGatedDeltaRuleFwdH(
 - `w`: `[B, HV, T, K]`
 - `u, vNewOut`: `[B, HV, T, V]`
 - `gOptional`: `[B, HV, T]`
+- `gkOptional`: `[B, HV, T, K]`（若提供）
 - `hOut`: `[B, HV, numChunks, K, V]`
 - `initalStateOptional`: `[B, HV, K, V]`（若提供）
 - `finalStateOut`: `[N, HV, K, V]`
@@ -203,15 +204,24 @@ aclnnStatus aclnnChunkGatedDeltaRuleFwdH(
 
 ### 4.4 数值语义
 
-- 该算子的核心递推公式为：
+- 标量门控 `gOptional` 路径的核心递推公式为：
 
 ```text
-S_{[c+1]} = exp(g_{[c]}) * S_{[c]} + k_{[c]}^T @ u_{[c]}
+v_new[c] = u[c] - w[c] @ S[c]
+k_decay[c, i] = k[c, i] * exp(g_last[c] - g[c, i])
+S[c+1] = exp(g_last[c]) * S[c] + k_decay[c]^T @ v_new[c]
 ```
 
-其中：
-- `g_{[c]}` 为第 `c` 个分块的门控衰减值（在 log 空间中累加后取 exp）
-- `k_{[c]}^T @ u_{[c]}` 为当前分块的键值外积累积
+逐通道门控 `gkOptional` 用于 KDA 状态传播。该路径要求 `k` 参数传入上游已计算的
+`kg = k * exp2(gk_last - gk)`，本算子不得再次对 `kg` 施加块内门控：
+
+```text
+v_new[c] = u[c] - w[c] @ S[c]
+S[c+1] = exp2(gk_last[c]) * S[c] + kg[c]^T @ v_new[c]
+```
+
+其中 `exp2(gk_last[c])` 沿 K 维逐通道作用于旧状态。`useExp2` 属性仍是标量门控路径的
+预留属性；`gkOptional` 的上述 `exp2` 语义固定启用，不受该预留属性控制。
 
 - 当前算子实现配置为：
 
@@ -231,13 +241,13 @@ USE_G_GAMMA = False
 
 ## 5. Torch 测试调用示例
 
-PyTorch 端通过 `torch.ops.npu.npu_chunk_gated_delta_rule_fwd_h` 调用，签名（见 `FLANpuOpApi.cpp`）：
+PyTorch 端通过稳定入口 `fla_npu.ops.ascendc.chunk_gated_delta_rule_fwd_h` 调用：
 
 ```python
-h, v_new, final_state = torch.ops.npu.npu_chunk_gated_delta_rule_fwd_h(
+h, v_new, final_state = fla_npu.ops.ascendc.chunk_gated_delta_rule_fwd_h(
     k, w, u,
-    g=...,                       # 当前不可为 None
-    gk=None,                     # 预留，必须为 None
+    g=...,                       # 与 gk 至少提供一个
+    gk=None,                     # 可选逐通道累计门控
     initial_state=None,          # 可选；不传则默认全零初始状态
     output_final_state=False,    # 是否输出最终状态
     chunk_size=64,               # 64 或 128

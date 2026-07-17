@@ -57,6 +57,7 @@ struct GDNFwdHOffsets {
     bool isInitialState;
     bool isFinalState;
     uint32_t blockTokens;
+    uint32_t streamId;
     // for debug
     uint32_t batchIdx;
     uint32_t headIdx;
@@ -240,6 +241,9 @@ struct BlockSchedulerGdnFwdH {
         offset.finalStateOffset = (stream.batchIdx * vNumHead + stream.vHeadIdx) * kHeadDim * vHeadDim + vBlockOffset;
         offset.hSrcOffset = (stream.shapeBatchIdx * vNumHead * totalChunks + stream.vHeadIdx * totalChunks + stream.chunkOffset + stream.chunkIdx) * kHeadDim * vHeadDim + vBlockOffset;
         offset.hDstOffset = offset.hSrcOffset + kHeadDim * vHeadDim;
+        if (storeFinalState && offset.isFinalState) {
+            offset.hDstOffset = offset.hSrcOffset;
+        }
         offset.uvOffset = (stream.shapeBatchIdx * vNumHead * totalTokens + stream.vHeadIdx * totalTokens + stream.tokenOffset + stream.chunkIdx * chunkSize) * vHeadDim + vBlockOffset;
         offset.wkOffset = (stream.shapeBatchIdx * kNumHead * totalTokens + stream.kHeadIdx * totalTokens + stream.tokenOffset + stream.chunkIdx * chunkSize) * kHeadDim;
         offset.wOffset = (stream.shapeBatchIdx * vNumHead * totalTokens + stream.vHeadIdx * totalTokens + stream.tokenOffset + stream.chunkIdx * chunkSize) * kHeadDim;
@@ -251,6 +255,7 @@ struct BlockSchedulerGdnFwdH {
         offset.vBlockOffset = vBlockOffset;
         offset.vBlockDim = vBlockDim;
         offset.blockTokens = offset.isFinalState ? (stream.batchTokens - stream.chunkIdx * chunkSize) : chunkSize;
+        offset.streamId = streamId;
         offset.batchIdx = stream.batchIdx;
         offset.headIdx = stream.vHeadIdx;
         offset.chunkIdx = stream.chunkIdx;
@@ -322,7 +327,10 @@ struct BlockSchedulerGdnFwdHVec : public BlockSchedulerGdnFwdH {
 
     CATLASS_DEVICE
     void Init(GM_ADDR cu_seqlens, GM_ADDR chunk_indices, GM_ADDR tiling, GM_ADDR user) {
-        BlockSchedulerGdnFwdH::Init(cu_seqlens, chunk_indices, tiling, user, AscendC::GetBlockIdx() / AscendC::GetSubBlockNum(), AscendC::GetBlockNum());
+        BlockSchedulerGdnFwdH::Init(
+            cu_seqlens, chunk_indices, tiling, user,
+            AscendC::GetBlockIdx() / AscendC::GetSubBlockNum(),
+            AscendC::GetBlockNum());
     }
 
 };

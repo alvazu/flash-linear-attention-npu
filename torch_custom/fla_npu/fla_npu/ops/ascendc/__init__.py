@@ -41,6 +41,8 @@ _ASCENDC_OPS = (
     "npu_chunk_local_cumsum",
     "npu_chunk_scaled_dot_kkt",
     "npu_solve_tri",
+    "npu_chunk_kda_fwd",
+    "npu_kda_gate_cumsum",
 )
 
 BACKWARD_OPS = {

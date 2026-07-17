@@ -118,6 +118,7 @@ def load_ascendc_opapi_libraries() -> list[ctypes.CDLL]:
     vendor_dir = _prepare_embedded_opp()
     op_api_dir = vendor_dir / "op_api" / "lib"
     custom_opapi = op_api_dir / "libcust_opapi.so"
+    opapi_alias = op_api_dir / "libopapi.so"
 
     try:
         custom_library = _load_shared_library_required(custom_opapi)
@@ -127,6 +128,8 @@ def load_ascendc_opapi_libraries() -> list[ctypes.CDLL]:
             f"Dynamic loader error: {exc}"
         ) from exc
     libraries = [custom_library]
+    if opapi_alias.exists():
+        libraries.append(_load_shared_library_required(opapi_alias))
 
     _ASCENDC_OPAPI_LIBRARIES = libraries
     return libraries
@@ -183,7 +186,7 @@ def load_legacy_torch_ops() -> pathlib.Path:
     import torch
     import torch_npu
 
-    _prepare_embedded_opp()
+    load_ascendc_opapi_libraries()
     _preload_torch_npu_dependencies(torch, torch_npu)
     legacy_library = _find_ascendc_extension_library()
     torch.ops.load_library(str(legacy_library))

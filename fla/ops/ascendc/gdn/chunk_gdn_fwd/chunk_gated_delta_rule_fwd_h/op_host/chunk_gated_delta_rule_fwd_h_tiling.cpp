@@ -85,8 +85,13 @@ ge::graphStatus Tiling4ChunkGatedDeltaRuleFwdH(gert::TilingContext *context)
     auto cuSeqlensTensor = context->GetOptionalInputTensor(INPUT_SEQLENS_IDX);
     auto initialStateTensor = context->GetOptionalInputTensor(INPUT_INITIAL_STATE_IDX);
     bool useInitialState = initialStateTensor != nullptr;
+    auto gTensor = context->GetOptionalInputTensor(INPUT_G_IDX);
     auto gkTensor = context->GetOptionalInputTensor(INPUT_GK_IDX);
     bool useGk = gkTensor != nullptr;
+    OP_CHECK_IF(gTensor == nullptr && gkTensor == nullptr,
+                OP_LOGE(context->GetNodeName(), "Either g or gk must be provided."),
+                return ge::GRAPH_FAILED);
+    auto gateTensor = gTensor != nullptr ? gTensor : gkTensor;
 
     auto attrPtr = context->GetAttrs();
     bool storeFinalState = *(attrPtr->GetAttrPointer<bool>(ATTR_STORE_FINAL_STATE_IDX));
@@ -105,7 +110,7 @@ ge::graphStatus Tiling4ChunkGatedDeltaRuleFwdH(gert::TilingContext *context)
     tilingCtx.cuSeqlensDim0 =
         cuSeqlensTensor != nullptr ? cuSeqlensTensor->GetStorageShape().GetDim(DIM_BATCH) : 0;
     tilingCtx.dataType = GdnFwdHDtypeToEnum(context->GetInputTensor(0)->GetDataType());
-    tilingCtx.gDataType = GdnFwdHDtypeToEnum(context->GetOptionalInputTensor(INPUT_G_IDX)->GetDataType());
+    tilingCtx.gDataType = GdnFwdHDtypeToEnum(gateTensor->GetDataType());
     tilingCtx.useInitialState = useInitialState;
     tilingCtx.stateDataType =
         useInitialState ? GdnFwdHDtypeToEnum(initialStateTensor->GetDataType()) : GDN_FWD_H_DTYPE_FP32;
