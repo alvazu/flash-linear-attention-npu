@@ -165,7 +165,7 @@ tiling.safeGate
 可以声明：
 
 - KDA forward 正向路径。
-- `K=128, V=128, chunk_size=64` 主流 `fp16/bf16` 场景。
+- `K=128, V=128/256, chunk_size=64/128` 的 `fp16/bf16` 场景。
 - BSND/TND 兼容 layout，以及 BNSD/NTD 性能 layout。
 - `gk` 外部输入路径。
 - `KdaGateCumsum` safe-gate raw path 的基本语义。
@@ -175,7 +175,6 @@ tiling.safeGate
 不能擅自声明：
 
 - KDA backward 已完成。
-- `V=256` 已优化。它需要独立模板。
 - 高 `K/V` 非 chunk 对齐 varlen 已优化。
 - 所有中间量无效区都有公开语义。
 - sanitizer 已覆盖 race/mem/init/sync，除非实际跑过并确认命中 sanitizer kernel。
@@ -621,6 +620,65 @@ ChunkGatedDeltaRuleFwdH(... userOutKg, userOutW, ...);
 - split path 内部全部用 executor-owned BNSD temporaries。
 - 最后一步 `ViewCopy` 或 layout swap 回用户输出。
 
+### 9.4 L0 读取必须注册为输入
+
+错误模式：stage 1 把 `Akk/w_pre/v_new` 写到某个输出槽，stage 3 又把同一地址只作为“输出”传入并在 kernel 内读取。代码地址看似连通，但 executor 看不到 stage 3 对这些张量的读依赖，可能在 `return_intermediate=False` 时提前复用 workspace。
+
+典型现象：
+
+- `return_intermediate=True` 精度正常，改成 `False` 后出现整块结构性误差。
+- 同一 kernel 单独运行正常，L2 拼接后错误。
+- 增加导出或调试 copy 后问题暂时消失。
+
+正确做法：
+
+```text
+stage 1 outputs: w_pre, Akk, v_new_seed
+stage 3 inputs:  stage_qg=w_pre, stage_aqk=Akk, stage_v_new=v_new_seed
+stage 3 outputs: w, u, kg
+```
+
+任何 kernel 读取的 GM tensor 都必须是该 L0 的 `OP_INPUT`，写入的 tensor 必须是 `OP_OUTPUT`。需要原地语义时，也要让图构建层看见真实的读写依赖，不能靠地址别名或导出选项维持生命周期。
+
+### 9.5 连续分核不能用 `subBlockIdx` 代替有效行判断
+
+两个 AIV subblock 按连续范围切分 `curT` 行时，不能写成：
+
+```cpp
+if (subBlockIdx >= curT) {
+    return;
+}
+```
+
+例如 `curT=1, subBlockNum=2` 时，连续切分可能得到 AIV0 的 `[0, 0)` 和 AIV1 的 `[0, 1)`；上述判断会让真正持有唯一有效行的 AIV1 退出，造成尾块 `qg/w` 整行未生成。典型现象是只在 `T % chunk_size = 1` 或相似极短尾块出现结构性误差，完整 chunk 全部正常。
+
+正确方式是先校验 `subBlockIdx < subBlockNum`，再计算：
+
+```cpp
+rowBegin = curT * subBlockIdx / subBlockNum;
+rowEnd = curT * (subBlockIdx + 1) / subBlockNum;
+if (rowBegin == rowEnd) {
+    // 无数值工作，但仍按协议完成需要的 ready/free 握手。
+}
+```
+
+对所有 `1..chunk_size-1` 尾长做回归，尤其覆盖 1、跨 16/32/64 tile 边界及 `chunk_size-1`。
+
+### 9.6 多槽流水必须同时约束数据和 credit
+
+只做 `producer set ready -> consumer wait ready` 不足以保护 ring buffer。生产者可能在消费者尚未读完时绕回并覆盖同一 slot。可靠协议应为：
+
+```text
+producer wait free(slot)
+producer write payload(slot)
+producer set ready(slot)
+consumer wait ready(slot)
+consumer read/compute payload(slot)
+consumer set free(slot)
+```
+
+队列深度、flag 数量和 workspace slot 数必须一一对应。任务尾部要把握手次数补齐或显式 drain，后续阶段复用 flag id 前要证明上一协议已经完全排空。workspace 应按 core 数和固定队列深度分配，避免随 token/chunk 数线性增长。
+
 ## 10. 精度定位流程
 
 ### 10.1 不要只看最终输出
@@ -1009,8 +1067,7 @@ WaitFlag<HardEvent::MTE3_V>(mte3ToVEvent);
 
 ## 18. 后续重点
 
-1. 为 high `K/V` non-aligned varlen 实现 dedicated partial-chunk 路径。
-2. 为 `V=256` 建独立模板，重新规划 UB/L1 和 Catlass tile。
-3. 对 `return_intermediate=True` 的 BSND/TND/BNSD/NTD 中间量逐项定义有效区语义。
-4. 对新增流水路径跑 sanitizer race/mem/init/sync，确认实际命中 sanitizer kernel。
-5. 若继续探索 MXR/MXH，必须同时提交精度、性能和流水驻留证据，不能只提交公式替换。
+1. 为 high `K/V` non-aligned varlen 实现 dedicated partial-chunk 性能模板；正确性路径继续保持完整 tile 补中性值、仅回写有效区。
+2. 对 `return_intermediate=True` 的 BSND/TND/BNSD/NTD 中间量逐项定义有效区语义。
+3. 对新增流水路径跑 sanitizer race/mem/init/sync，确认实际命中 sanitizer kernel。
+4. 若继续探索 MXR/MXH，必须同时提交精度、性能和流水驻留证据，不能只提交公式替换。

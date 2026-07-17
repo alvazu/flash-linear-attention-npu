@@ -13,13 +13,18 @@ public:
     explicit KdaLayoutSwap12(const char *name) : OpDef(name)
     {
         const std::initializer_list<ge::DataType> dataTypes = {
-            ge::DT_FLOAT, ge::DT_FLOAT16, ge::DT_BF16
+            ge::DT_FLOAT, ge::DT_FLOAT16, ge::DT_BF16, ge::DT_FLOAT16, ge::DT_BF16
+        };
+        const std::initializer_list<ge::DataType> dependencyTypes = {
+            ge::DT_FLOAT, ge::DT_FLOAT16, ge::DT_BF16, ge::DT_FLOAT, ge::DT_FLOAT
         };
         const std::initializer_list<ge::Format> formats = {
-            ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND
+            ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND, ge::FORMAT_ND
         };
 
         this->Input("x").ParamType(REQUIRED).DataType(dataTypes).Format(formats).UnknownShapeFormat(formats);
+        this->Input("dependency").ParamType(OPTIONAL)
+            .DataType(dependencyTypes).Format(formats).UnknownShapeFormat(formats);
         this->Output("y").ParamType(REQUIRED).DataType(dataTypes).Format(formats).UnknownShapeFormat(formats);
 
         OpAICoreConfig aicoreConfig;

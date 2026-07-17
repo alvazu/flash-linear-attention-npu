@@ -635,7 +635,7 @@ def npu_chunk_kda_fwd(
 ):
     import torch
 
-    del return_intermediate
+    return_intermediate = _optional_bool(return_intermediate, False)
     layout = str(layout)
     if layout not in {"BSND", "BNSD", "TND", "NTD"}:
         raise RuntimeError("npu_chunk_kda_fwd: layout must be one of BSND, BNSD, TND, NTD and must be uppercase.")
@@ -645,8 +645,8 @@ def npu_chunk_kda_fwd(
         raise RuntimeError("npu_chunk_kda_fwd: transpose_state_layout=True is not supported.")
 
     chunk_size = int(chunk_size)
-    if chunk_size not in {32, 64, 128}:
-        raise RuntimeError("npu_chunk_kda_fwd: chunk_size must be 32, 64 or 128.")
+    if chunk_size not in {64, 128}:
+        raise RuntimeError("npu_chunk_kda_fwd: chunk_size must be 64 or 128.")
 
     q_shape = _shape(q)
     k_shape = _shape(k)
@@ -694,8 +694,7 @@ def npu_chunk_kda_fwd(
         raise RuntimeError("npu_chunk_kda_fwd: HV must be divisible by H.")
     split_cube_supported = (
         q.dtype in {torch.float16, torch.bfloat16} and k.dtype == q.dtype and v.dtype == q.dtype and
-        chunk_size == 64 and k_dim >= 16 and v_dim >= 16 and k_dim % 16 == 0 and v_dim % 16 == 0 and
-        v_dim <= 128 and k_dim * v_dim >= 4 * 64 * 64 and k_dim * v_dim >= chunk_size * (k_dim + v_dim)
+        k_dim >= 16 and v_dim >= 16 and k_dim % 16 == 0 and v_dim % 16 == 0 and v_dim <= 256
     )
     if not split_cube_supported:
         raise RuntimeError("npu_chunk_kda_fwd: shape is outside the supported split cube/vector template.")
@@ -776,20 +775,27 @@ def npu_chunk_kda_fwd(
                         else (batch, seqlen, hv_num, k_dim))
         h_shape = ((batch, hv_num, total_chunks, k_dim, v_dim) if is_internal_layout
                    else (batch, total_chunks, hv_num, k_dim, v_dim))
-    aqk = _empty(bnst_shape, q)
-    akk = _empty(bnst_shape, q)
-    w = _empty(bnsd_k_shape, q)
-    u = _empty_like(v)
-    qg = _empty(bnsd_k_shape, q)
-    kg = _empty(bnsd_k_shape, q)
-    v_new = _empty_like(v)
-    h = _empty(h_shape, q)
+    if return_intermediate:
+        kernel_aqk = aqk = _empty(bnst_shape, q)
+        kernel_akk = akk = _empty(bnst_shape, q)
+        kernel_w = w = _empty(bnsd_k_shape, q)
+        kernel_u = u = _empty_like(v)
+        kernel_qg = qg = _empty(bnsd_k_shape, q)
+        kernel_kg = kg = _empty(bnsd_k_shape, q)
+        kernel_v_new = v_new = _empty_like(v)
+        kernel_h = h = _empty(h_shape, q)
+    else:
+        aqk, akk, w, u = (_empty((0,), q) for _ in range(4))
+        qg, kg, v_new, h = (_empty((0,), q) for _ in range(4))
+        kernel_aqk, kernel_akk, kernel_w, kernel_u = aqk, akk, w, u
+        kernel_qg, kernel_kg, kernel_v_new, kernel_h = qg, kg, v_new, h
     empty = _empty((0,), q)
     final_state = final_state_work if _optional_bool(output_final_state, False) else _empty((0,), q, dtype=torch.float32)
     g = gk if gk.dtype == torch.float32 else gk.to(torch.float32)
     initial_state_out = initial_state if initial_state is not None else empty
     user_outputs = (o, final_state, g, aqk, akk, w, u, qg, kg, v_new, h, initial_state_out)
-    kernel_outputs = (o, final_state_work, aqk, akk, w, u, qg, kg, v_new, h)
+    kernel_outputs = (o, final_state_work, kernel_aqk, kernel_akk, kernel_w, kernel_u,
+                      kernel_qg, kernel_kg, kernel_v_new, kernel_h)
     layout_buffer = ctypes.create_string_buffer(layout.encode("utf-8"))
     _call_aclnn(
         "aclnnChunkKdaFwd",
@@ -809,14 +815,14 @@ def npu_chunk_kda_fwd(
             ctypes.c_int64(total_chunks),
             ctx.tensor(o, "o"),
             ctx.tensor(final_state_work, "final_state"),
-            ctx.tensor(aqk, "aqk"),
-            ctx.tensor(akk, "akk"),
-            ctx.tensor(w, "w"),
-            ctx.tensor(u, "u"),
-            ctx.tensor(qg, "qg"),
-            ctx.tensor(kg, "kg"),
-            ctx.tensor(v_new, "v_new"),
-            ctx.tensor(h, "h"),
+            ctx.tensor(kernel_aqk, "aqk"),
+            ctx.tensor(kernel_akk, "akk"),
+            ctx.tensor(kernel_w, "w"),
+            ctx.tensor(kernel_u, "u"),
+            ctx.tensor(kernel_qg, "qg"),
+            ctx.tensor(kernel_kg, "kg"),
+            ctx.tensor(kernel_v_new, "v_new"),
+            ctx.tensor(kernel_h, "h"),
         ],
         kernel_outputs,
     )

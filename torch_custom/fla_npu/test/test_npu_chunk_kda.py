@@ -556,15 +556,73 @@ def test_chunk_kda_fwd_upper_triangle_dirty_zero():
     torch.testing.assert_close(akk_ref[diag, diag], torch.ones(t), rtol=0, atol=0)
 
 
-def test_chunk_kda_fwd_chunk128_rejected_as_unsupported():
+def test_chunk_kda_fwd_vdim256_matches_reference():
     device = _device()
     if device.type == "cpu":
         return
-    q, k, v, gk, beta, _ = _make_inputs(device, h=1, hv=2, t=16)
-    scale = q.shape[-1] ** -0.5
-    cu_seqlens = [0, 6, 16]
-    try:
-        fla_ascendc.chunk_kda_fwd(
+
+    for dtype in (torch.bfloat16, torch.float16):
+        q, k, v, gk, beta, initial_state = _make_inputs(
+            device, b=1, h=1, hv=2, t=128, kdim=128, vdim=256, dtype=dtype,
+        )
+        scale = q.shape[-1] ** -0.5
+        got = fla_ascendc.chunk_kda_fwd(
+            q,
+            k,
+            v,
+            gk,
+            beta,
+            scale,
+            64,
+            layout="BSND",
+            initial_state=initial_state,
+            output_final_state=True,
+            return_intermediate=True,
+        )
+        ref = chunk_kda_forward_reference(
+            q.detach().cpu(),
+            k.detach().cpu(),
+            v.detach().cpu(),
+            gk.detach().cpu(),
+            beta.detach().cpu(),
+            scale=scale,
+            chunk_size=64,
+            initial_state=initial_state.detach().cpu(),
+            output_final_state=True,
+        )
+        dtype_name = str(dtype).removeprefix("torch.")
+        for name, actual, expected in (
+            ("o", got[0], ref.o),
+            ("final_state", got[1], ref.final_state),
+            ("Aqk", got[3], ref.Aqk),
+            ("Akk", got[4], ref.Akk),
+            ("w", got[5], ref.w),
+            ("u", got[6], ref.u),
+            ("qg", got[7], ref.qg),
+            ("kg", got[8], ref.kg),
+            ("v_new", got[9], ref.v_new),
+            ("h", got[10], ref.h),
+        ):
+            assert torch.isfinite(actual).all().item(), f"{dtype_name} V256 {name} contains NaN or Inf"
+            _assert_close(f"{dtype_name} V256 {name}", actual, expected, rtol=2e-2, atol=2e-2)
+
+
+def test_chunk_kda_fwd_chunk128_matches_reference():
+    device = _device()
+    if device.type == "cpu":
+        return
+
+    cases = (
+        (torch.bfloat16, 256, 128),
+        (torch.float16, 196, 128),
+        (torch.bfloat16, 257, 256),
+    )
+    for dtype, t, vdim in cases:
+        q, k, v, gk, beta, initial_state = _make_inputs(
+            device, b=1, h=1, hv=2, t=t, kdim=128, vdim=vdim, dtype=dtype,
+        )
+        scale = q.shape[-1] ** -0.5
+        got = fla_ascendc.chunk_kda_fwd(
             q,
             k,
             v,
@@ -573,14 +631,132 @@ def test_chunk_kda_fwd_chunk128_rejected_as_unsupported():
             scale,
             128,
             layout="BSND",
+            initial_state=initial_state,
             output_final_state=True,
-            cu_seqlens=cu_seqlens,
-            return_intermediate=False,
+            return_intermediate=True,
         )
-    except RuntimeError:
-        pass
-    else:
-        raise AssertionError("chunk_size != 64 must be rejected as an unsupported KDA forward path")
+        ref = chunk_kda_forward_reference(
+            q.detach().cpu(),
+            k.detach().cpu(),
+            v.detach().cpu(),
+            gk.detach().cpu(),
+            beta.detach().cpu(),
+            scale=scale,
+            chunk_size=128,
+            initial_state=initial_state.detach().cpu(),
+            output_final_state=True,
+        )
+        case_name = f"{str(dtype).removeprefix('torch.')} T{t} V{vdim} C128"
+        for name, actual, expected in (
+            ("o", got[0], ref.o),
+            ("final_state", got[1], ref.final_state),
+            ("Aqk", got[3], ref.Aqk),
+            ("Akk", got[4], ref.Akk),
+            ("w", got[5], ref.w),
+            ("u", got[6], ref.u),
+            ("qg", got[7], ref.qg),
+            ("kg", got[8], ref.kg),
+            ("v_new", got[9], ref.v_new),
+            ("h", got[10], ref.h),
+        ):
+            assert torch.isfinite(actual).all().item(), f"{case_name} {name} contains NaN or Inf"
+            _assert_close(f"{case_name} {name}", actual, expected, rtol=2e-2, atol=2e-2)
+
+
+def test_chunk_kda_fwd_bsnd_export_dependency_matches_reference():
+    device = _device()
+    if device.type == "cpu":
+        return
+
+    q, k, v, gk, beta, initial_state = _make_inputs(
+        device, b=1, h=4, hv=4, t=1024, kdim=128, vdim=128, dtype=torch.bfloat16,
+    )
+    scale = q.shape[-1] ** -0.5
+    got = fla_ascendc.chunk_kda_fwd(
+        q,
+        k,
+        v,
+        gk,
+        beta,
+        scale,
+        64,
+        layout="BSND",
+        initial_state=initial_state,
+        output_final_state=True,
+        return_intermediate=True,
+    )
+    ref = chunk_kda_forward_reference(
+        q.detach().cpu(),
+        k.detach().cpu(),
+        v.detach().cpu(),
+        gk.detach().cpu(),
+        beta.detach().cpu(),
+        scale=scale,
+        chunk_size=64,
+        initial_state=initial_state.detach().cpu(),
+        output_final_state=True,
+    )
+    for name, actual, expected in (
+        ("o", got[0], ref.o),
+        ("w", got[5], ref.w),
+        ("v_new", got[9], ref.v_new),
+        ("h", got[10], ref.h),
+    ):
+        assert torch.isfinite(actual).all().item(), f"BSND dependency {name} contains NaN or Inf"
+        _assert_close(f"BSND dependency {name}", actual, expected, rtol=2e-2, atol=2e-2)
+
+
+def test_chunk_kda_fwd_without_intermediate_matches_export_and_reference():
+    device = _device()
+    if device.type == "cpu":
+        return
+
+    q, k, v, gk, beta, _ = _make_inputs(
+        device, b=1, h=4, hv=4, t=1024, kdim=128, vdim=128, dtype=torch.bfloat16,
+    )
+    scale = q.shape[-1] ** -0.5
+    got_without = fla_ascendc.chunk_kda_fwd(
+        q,
+        k,
+        v,
+        gk,
+        beta,
+        scale,
+        64,
+        layout="BSND",
+        initial_state=None,
+        output_final_state=False,
+        return_intermediate=False,
+    )
+    got_with = fla_ascendc.chunk_kda_fwd(
+        q,
+        k,
+        v,
+        gk,
+        beta,
+        scale,
+        64,
+        layout="BSND",
+        initial_state=None,
+        output_final_state=False,
+        return_intermediate=True,
+    )
+    ref = chunk_kda_forward_reference(
+        q.detach().cpu(),
+        k.detach().cpu(),
+        v.detach().cpu(),
+        gk.detach().cpu(),
+        beta.detach().cpu(),
+        scale=scale,
+        chunk_size=64,
+        initial_state=None,
+        output_final_state=False,
+    )
+    assert torch.isfinite(got_without[0]).all().item()
+    assert torch.isfinite(got_with[0]).all().item()
+    _assert_close("BSND no intermediate o", got_without[0], ref.o, rtol=2e-2, atol=2e-2)
+    _assert_close("BSND exported intermediate o", got_with[0], ref.o, rtol=2e-2, atol=2e-2)
+    torch.testing.assert_close(got_without[0], got_with[0], rtol=0, atol=0)
 
 
 def test_chunk_kda_fwd_varlen_initial_state_shape_rejected():
@@ -633,7 +809,7 @@ def test_chunk_kda_fwd_bf16_chunk32_rejected_as_unsupported():
     except RuntimeError:
         pass
     else:
-        raise AssertionError("chunk_size != 64 must be rejected as an unsupported KDA forward path")
+        raise AssertionError("chunk_size outside {64, 128} must be rejected as an unsupported KDA forward path")
 
 
 def test_chunk_kda_fwd_bf16_gate_matches_reference():
@@ -1275,11 +1451,14 @@ if __name__ == "__main__":
     test_chunk_kda_fwd_varlen_large_chunk_indices_not_prechecked()
     test_chunk_gdn_fwd_h_gk_only_matches_neutral_g()
     test_chunk_kda_fwd_upper_triangle_dirty_zero()
+    test_chunk_kda_fwd_vdim256_matches_reference()
+    test_chunk_kda_fwd_chunk128_matches_reference()
+    test_chunk_kda_fwd_bsnd_export_dependency_matches_reference()
+    test_chunk_kda_fwd_without_intermediate_matches_export_and_reference()
     test_chunk_kda_fwd_model_shape_with_stats()
     test_chunk_kda_fwd_model_shape_initial_state_none_with_stats()
 
     for negative_test in (
-        "test_chunk_kda_fwd_chunk128_rejected_as_unsupported",
         "test_chunk_kda_fwd_varlen_initial_state_shape_rejected",
         "test_chunk_kda_fwd_bf16_chunk32_rejected_as_unsupported",
         "test_chunk_kda_fwd_tnd_multi_head_rejected",

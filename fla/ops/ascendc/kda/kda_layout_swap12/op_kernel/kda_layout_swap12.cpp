@@ -167,8 +167,10 @@ private:
 };
 } // namespace
 
-extern "C" __global__ __aicore__ void kda_layout_swap12(GM_ADDR x, GM_ADDR y, GM_ADDR workspace, GM_ADDR tiling)
+extern "C" __global__ __aicore__ void kda_layout_swap12(GM_ADDR x, GM_ADDR dependency, GM_ADDR y,
+                                                          GM_ADDR workspace, GM_ADDR tiling)
 {
+    (void)dependency;
     (void)workspace;
     GET_TILING_DATA(tilingData, tiling);
     TPipe pipe;

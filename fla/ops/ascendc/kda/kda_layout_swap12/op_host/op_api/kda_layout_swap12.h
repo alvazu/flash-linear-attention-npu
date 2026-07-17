@@ -13,6 +13,12 @@
 namespace l0op {
 const std::array<const aclTensor *, 1> KdaLayoutSwap12(
     const aclTensor *x,
+    const aclTensor *dependency,
+    const aclTensor *y,
+    aclOpExecutor *executor);
+
+const std::array<const aclTensor *, 1> KdaLayoutSwap12(
+    const aclTensor *x,
     const aclTensor *y,
     aclOpExecutor *executor);
 } // namespace l0op

@@ -26,6 +26,11 @@ constexpr size_t ATTR_CHUNK_SIZE_IDX = 1;
 constexpr size_t ATTR_OUTPUT_FINAL_STATE_IDX = 2;
 constexpr size_t ATTR_TOTAL_CHUNKS_IDX = 3;
 constexpr size_t ATTR_STAGE_IDX = 4;
+constexpr uint64_t KDA_SOLVE_SCRATCH_SLOTS = 5;
+constexpr uint64_t KDA_SCORE_QUEUE_SLOTS = 2;
+constexpr uint64_t KDA_SCORE_SCRATCH_PLANES = 3;
+constexpr uint64_t KDA_FP32_BYTES = sizeof(float);
+constexpr uint64_t KDA_WORKSPACE_ALIGN = 512;
 
 constexpr size_t DIM_B = 0;
 constexpr size_t DIM_H = 1;
@@ -119,7 +124,28 @@ ge::graphStatus Tiling4ChunkKdaFwd(gert::TilingContext *context)
     }
     context->SetBlockDim(blockDim == 0 ? 1 : blockDim);
     size_t *workspace = context->GetWorkspaceSizes(1);
-    workspace[0] = ascendcPlatform.GetLibApiWorkSpaceSize();
+    uint64_t kernelScratch = 0;
+    if (stage == 1) {
+        const uint64_t usedCoreNum = static_cast<uint64_t>(blockDim == 0 ? 1 : blockDim);
+        const uint64_t solveScratch = usedCoreNum * KDA_SOLVE_SCRATCH_SLOTS *
+                                      static_cast<uint64_t>(chunkSize) * static_cast<uint64_t>(chunkSize) *
+                                      KDA_FP32_BYTES;
+        const uint64_t alignedSolveScratch =
+            (solveScratch + KDA_WORKSPACE_ALIGN - 1) / KDA_WORKSPACE_ALIGN * KDA_WORKSPACE_ALIGN;
+        const uint64_t scoreElementBytes = qDesc->GetDataType() == ge::DT_FLOAT ? sizeof(float) : sizeof(uint16_t);
+        const uint64_t scoreScratch = usedCoreNum * KDA_SCORE_QUEUE_SLOTS * KDA_SCORE_SCRATCH_PLANES *
+                                      static_cast<uint64_t>(chunkSize) *
+                                      static_cast<uint64_t>(qShape.GetDim(DIM_D)) * scoreElementBytes;
+        kernelScratch = alignedSolveScratch + scoreScratch;
+    } else if (stage == 2) {
+        const uint64_t outputElements = static_cast<uint64_t>(batch) *
+                                        static_cast<uint64_t>(vShape.GetDim(DIM_H)) *
+                                        static_cast<uint64_t>(qShape.GetDim(DIM_T)) *
+                                        static_cast<uint64_t>(vShape.GetDim(DIM_D));
+        kernelScratch = 2 * outputElements * KDA_FP32_BYTES;
+    }
+    kernelScratch = (kernelScratch + KDA_WORKSPACE_ALIGN - 1) / KDA_WORKSPACE_ALIGN * KDA_WORKSPACE_ALIGN;
+    workspace[0] = ascendcPlatform.GetLibApiWorkSpaceSize() + kernelScratch;
 
     tiling.set_batch(batch);
     tiling.set_seqNum(seqNum);

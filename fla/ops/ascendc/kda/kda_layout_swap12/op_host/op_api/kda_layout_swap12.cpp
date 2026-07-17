@@ -18,13 +18,14 @@ OP_TYPE_REGISTER(KdaLayoutSwap12);
 
 const std::array<const aclTensor *, 1> KdaLayoutSwap12(
     const aclTensor *x,
+    const aclTensor *dependency,
     const aclTensor *y,
     aclOpExecutor *executor)
 {
-    L0_DFX(KdaLayoutSwap12, x, y);
+    L0_DFX(KdaLayoutSwap12, x, dependency, y);
     auto ret = ADD_TO_LAUNCHER_LIST_AICORE(
         KdaLayoutSwap12,
-        OP_INPUT(x),
+        OP_INPUT(x, dependency),
         OP_OUTPUT(y),
         OP_ATTR());
     if (ret != ACLNN_SUCCESS) {
@@ -33,5 +34,13 @@ const std::array<const aclTensor *, 1> KdaLayoutSwap12(
     }
     (void)executor;
     return {y};
+}
+
+const std::array<const aclTensor *, 1> KdaLayoutSwap12(
+    const aclTensor *x,
+    const aclTensor *y,
+    aclOpExecutor *executor)
+{
+    return KdaLayoutSwap12(x, nullptr, y, executor);
 }
 } // namespace l0op
