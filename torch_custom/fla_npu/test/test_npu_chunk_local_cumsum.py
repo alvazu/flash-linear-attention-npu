@@ -4,7 +4,7 @@ from typing import List, Optional, Tuple
 
 import torch
 import torch_npu
-import fla_npu
+from fla_npu.ops.ascendc import chunk_local_cumsum
 
 
 torch.npu.config.allow_internal_format = False
@@ -91,14 +91,6 @@ def _tolerances(dtype: torch.dtype) -> Tuple[float, float]:
     return 2e-2, 5e-2
 
 
-def call_chunk_local_cumsum(g: torch.Tensor, chunk_size: int, **kwargs) -> torch.Tensor:
-    try:
-        op = torch.ops.npu.npu_chunk_local_cumsum
-    except AttributeError:
-        from fla_npu.ops.ascendc import npu_chunk_local_cumsum as op
-    return op(g, chunk_size, **kwargs)
-
-
 def run_case(
     name: str,
     shape: Tuple[int, ...],
@@ -134,7 +126,7 @@ def run_case(
     }
     if output_dtype is not None:
         kwargs["output_dtype"] = output_dtype
-    actual = call_chunk_local_cumsum(g_npu, chunk_size, **kwargs).cpu()
+    actual = chunk_local_cumsum(g_npu, chunk_size, **kwargs).cpu()
     expected_dtype = resolve_output_dtype(dtype, output_dtype)
     expected = reference_impl(g_cpu, chunk_size, reverse, scale, cu_seqlens_cpu, expected_dtype)
 
