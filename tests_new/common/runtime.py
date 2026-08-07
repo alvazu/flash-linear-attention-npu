@@ -14,8 +14,6 @@ def get_torch():
 
 
 def require_npu(device_id: int = 0):
-    """检查 torch_npu/NPU 是否可用，并切到指定 device。"""
-
     torch = get_torch()
     try:
         importlib.import_module("torch_npu")
@@ -28,8 +26,6 @@ def require_npu(device_id: int = 0):
 
 
 def dtype_from_name(torch: Any, name: str):
-    """把 YAML 中的 dtype 字符串转换成 torch dtype。"""
-
     mapping = {
         "float16": torch.float16,
         "half": torch.float16,

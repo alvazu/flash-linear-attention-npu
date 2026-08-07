@@ -127,8 +127,8 @@ def run_ascendc(torch: Any, inputs: dict[str, Any], case: dict[str, Any]):
         w=None,
         g_gamma=None,
         scale=float(attrs["scale"]),
-        use_exp2=False,
-        transpose_state_layout=False,
+        use_exp2=bool(attrs.get("use_exp2", False)),
+        transpose_state_layout=bool(attrs.get("transpose_state_layout", False)),
     )
 
 
