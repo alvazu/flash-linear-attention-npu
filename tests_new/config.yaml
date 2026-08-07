@@ -1,0 +1,47 @@
+schema_version: 1
+
+# common 是所有算子的公共默认配置。算子自己没有覆写时使用这里的值。
+common:
+  # 运行 tests_new 前需要准备的依赖说明。ct 是精度对比工具，accuracy 会 import ct。
+  requirements:
+    - pyyaml
+    - torch
+    - torch_npu
+    - fla_npu
+    - ct
+
+  # 默认随机输入范围。cases.yaml 只描述形状、dtype 和算子属性，不再重复写随机策略。
+  data_generation:
+    input_scale: 0.05
+    state_scale: 0.02
+    gate_span: 2.0
+
+  # accuracy 统一使用 ct.dual(actual, truth_float64, control) 做比较。
+  accuracy:
+    compare_dtype: float16
+
+  # performance 统一使用同步 wall time 做轻量 smoke；正式性能结论仍以 profiling/CI 为准。
+  perf:
+    warmup: 3
+    repeats: 10
+
+operators:
+  chunk_bwd_dqkwg:
+    capability:
+      soc: [ascend910b, ascend910_93, ascend950]
+      routes: [ascendc, aclnn, direct_launch]
+
+    # 覆盖矩阵集中放在根配置里，避免每个 case 重复 tags/soc/run_on。
+    coverage_requirements:
+      routes:
+        case_ids:
+          - chunk_bwd_dqkwg_route_smoke
+      accuracy:
+        case_ids:
+          - chunk_bwd_dqkwg_route_smoke
+          - chunk_bwd_dqkwg_dense_fp16
+          - chunk_bwd_dqkwg_dense_bf16_gva_v256
+          - chunk_bwd_dqkwg_varlen_tail
+      perf:
+        case_ids:
+          - chunk_bwd_dqkwg_perf_smoke

@@ -1,0 +1,46 @@
+schema_version: 1
+op: chunk_bwd_dqkwg
+
+# cases.yaml 只保留构造单个 case 必需的信息：
+# - shape: 输入/输出形状相关参数
+# - dtype: 输入 dtype 组合
+# - attrs: 算子属性
+# - optional_inputs: 可选输入；chunk_indices 支持 derived 自动由 cu_seqlens 推导
+# - seed: 随机种子
+cases:
+  - id: chunk_bwd_dqkwg_route_smoke
+    shape: {B: 1, H_k: 2, H_v: 2, T: 65, K: 128, V: 128, N_c: 2}
+    dtype: {qkv: float16, g: float32, state: float16}
+    attrs: {scale: 0.0625, chunk_size: 64}
+    optional_inputs: {cu_seqlens: null, chunk_indices: null}
+    seed: 2026080601
+
+  - id: chunk_bwd_dqkwg_dense_fp16
+    shape: {B: 1, H_k: 2, H_v: 2, T: 128, K: 128, V: 128, N_c: 2}
+    dtype: {qkv: float16, g: float16, state: float16}
+    attrs: {scale: 0.0883883476, chunk_size: 64}
+    optional_inputs: {cu_seqlens: null, chunk_indices: null}
+    seed: 2026080602
+
+  - id: chunk_bwd_dqkwg_dense_bf16_gva_v256
+    shape: {B: 1, H_k: 2, H_v: 4, T: 129, K: 128, V: 256, N_c: 2}
+    dtype: {qkv: bfloat16, g: float32, state: bfloat16}
+    attrs: {scale: 0.0625, chunk_size: 128}
+    optional_inputs: {cu_seqlens: null, chunk_indices: null}
+    seed: 2026080603
+
+  - id: chunk_bwd_dqkwg_varlen_tail
+    shape: {B: 1, H_k: 2, H_v: 4, T: 193, K: 128, V: 128, N_c: 4}
+    dtype: {qkv: float16, g: float32, state: float16}
+    attrs: {scale: 0.0625, chunk_size: 64}
+    optional_inputs:
+      cu_seqlens: [0, 65, 193]
+      chunk_indices: derived
+    seed: 2026080604
+
+  - id: chunk_bwd_dqkwg_perf_smoke
+    shape: {B: 2, H_k: 4, H_v: 8, T: 512, K: 128, V: 256, N_c: 4}
+    dtype: {qkv: bfloat16, g: float32, state: bfloat16}
+    attrs: {scale: 0.088, chunk_size: 128}
+    optional_inputs: {cu_seqlens: null, chunk_indices: null}
+    seed: 2026080605

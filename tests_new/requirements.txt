@@ -1,0 +1,4 @@
+pyyaml
+
+# accuracy 会 import ct 并调用 ct.dual 做精度对比。
+# ct 通常来自内部精度对比工具，请在 NPU 测试环境中提前安装。
