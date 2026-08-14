@@ -1,0 +1,14 @@
+tests_new/op_golden/chunk_bwd_dqkwg/golden.py
+  h_1aac240b771fd0 130-131
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "42d0bfd82481d448b018363931e89d7c4efba71a",
+  "prompts": {},
+  "humans": {
+    "h_1aac240b771fd0": {
+      "author": "alvazu <huangjz@thormind.com>"
+    }
+  }
+}
