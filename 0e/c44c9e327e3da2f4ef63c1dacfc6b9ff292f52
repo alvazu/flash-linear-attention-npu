@@ -1,0 +1,42 @@
+.gitignore
+  h_4cbccb51321da6 49-53
+tests/atk/chunk_gated_delta_rule_bwd_dhu/README.md
+  s_67d5bbdd6f5fa3::t_b57f7364914a8f 1-184
+tests/atk/chunk_gated_delta_rule_fwd_h/README.md
+  s_67d5bbdd6f5fa3::t_ce4c39d5147cf8 1-184
+tests/atk/chunk_gated_delta_rule_fwd_h/atk_chunk_gated_delta_rule_fwd_h.json
+  s_67d5bbdd6f5fa3::t_18c255122a7eab 1-412
+tests/atk/chunk_gated_delta_rule_fwd_h/chunk_gated_delta_rule_fwd_h.yaml
+  s_67d5bbdd6f5fa3::t_d9dca8798edbe8 1-216
+tests/atk/chunk_gated_delta_rule_fwd_h/executor_chunk_gated_delta_rule_fwd_h.py
+  s_67d5bbdd6f5fa3::t_23a76d9a404bca 1-209
+tests/atk/chunk_gated_delta_rule_fwd_h/gen_chunk_gated_delta_rule_fwd_h.py
+  s_67d5bbdd6f5fa3::t_a7de9a28fbead6 1-456
+tests/atk/chunk_kda_bwd_intra/atk_chunk_kda_bwd_intra.json
+  s_67d5bbdd6f5fa3::t_c5002fe11ec8f2 1-358
+tests/atk/chunk_kda_bwd_intra/chunk_kda_bwd_intra.yaml
+  s_67d5bbdd6f5fa3::t_34d4bf882d8c41 1-186
+tests/atk/chunk_kda_bwd_intra/executor_chunk_kda_bwd_intra.py
+  s_67d5bbdd6f5fa3::t_fd22301e9842dc 1-188
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "0ec44c9e327e3da2f4ef63c1dacfc6b9ff292f52",
+  "prompts": {},
+  "humans": {
+    "h_4cbccb51321da6": {
+      "author": "xiu_ling_wang <wangxiuling2@h-partners.com>"
+    }
+  },
+  "sessions": {
+    "s_67d5bbdd6f5fa3": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a7e8fac4a8216249dc0e2e9",
+        "model": "deepseek_v4_flash_official__max"
+      },
+      "human_author": "xiu_ling_wang <wangxiuling2@h-partners.com>"
+    }
+  }
+}
