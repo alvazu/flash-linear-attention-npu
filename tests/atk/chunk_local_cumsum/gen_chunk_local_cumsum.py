@@ -1,0 +1,402 @@
+"""Deterministic ATK matrix generator for chunk_local_cumsum."""
+
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+
+try:
+    from atk.case_generator.generator.base_generator import CaseGenerator
+    from atk.case_generator.generator.generate_types import GENERATOR_REGISTRY
+    from atk.configs.case_config import CaseConfig
+except ModuleNotFoundError as exc:
+    if exc.name != "atk":
+        raise
+    CaseGenerator = None
+    GENERATOR_REGISTRY = None
+    CaseConfig = None
+
+CASES = json.loads(r'''
+[
+  {
+    "id": 0,
+    "default_seed": 20260813,
+    "name": "chunk_local_cumsum",
+    "aclnn_name": "ChunkLocalCumsum",
+    "version": "v2.1",
+    "api": "pytorch",
+    "api_type": "executor_chunk_local_cumsum",
+    "expected_error_msg": null,
+    "backward": false,
+    "standard": {
+      "acc": {
+        "cv_fused_double_benchmark": {
+          "max_re_ratio": 5,
+          "avg_re_ratio": 1.5,
+          "root_mean_squared_ratio": 1.5
+        }
+      },
+      "perf": "not_key"
+    },
+    "outputs": null,
+    "inputs": [
+      {
+        "name": "low_precision_marker",
+        "type": "tensor",
+        "required": true,
+        "dtype": "bf16",
+        "shape": [
+          1
+        ],
+        "range_values": [
+          0,
+          0
+        ],
+        "backward": false
+      },
+      {
+        "name": "fp32_marker",
+        "type": "tensor",
+        "required": true,
+        "dtype": "fp32",
+        "shape": [
+          1
+        ],
+        "range_values": [
+          0,
+          0
+        ],
+        "backward": false
+      },
+      {
+        "name": "case_spec",
+        "type": "attr",
+        "required": true,
+        "dtype": "non_param",
+        "shape": null,
+        "range_values": "{\"B\":1,\"H\":8,\"T\":128,\"case_key\":\"chunk_local_cumsum_000_smoke\",\"chunk_size\":64,\"cu_seqlens\":\"\",\"dtype\":\"fp32\",\"explicit_chunk_indices\":false,\"head_first\":true,\"output_dtype\":\"float32\",\"reverse\":false,\"route\":\"ascendc\",\"seed\":20260813,\"soc\":\"ascend910b\",\"tags\":\"accuracy,smoke\",\"varlen\":false}",
+        "backward": false
+      },
+      {
+        "name": "soc",
+        "type": "attr",
+        "required": true,
+        "dtype": "string",
+        "shape": null,
+        "range_values": "ascend910b",
+        "backward": false
+      },
+      {
+        "name": "route",
+        "type": "attr",
+        "required": true,
+        "dtype": "string",
+        "shape": null,
+        "range_values": "ascendc",
+        "backward": false
+      },
+      {
+        "name": "B",
+        "type": "attr",
+        "required": true,
+        "dtype": "int",
+        "shape": null,
+        "range_values": 1,
+        "backward": false
+      },
+      {
+        "name": "H",
+        "type": "attr",
+        "required": true,
+        "dtype": "int",
+        "shape": null,
+        "range_values": 8,
+        "backward": false
+      },
+      {
+        "name": "T",
+        "type": "attr",
+        "required": true,
+        "dtype": "int",
+        "shape": null,
+        "range_values": 128,
+        "backward": false
+      },
+      {
+        "name": "dtype",
+        "type": "attr",
+        "required": true,
+        "dtype": "string",
+        "shape": null,
+        "range_values": "fp32",
+        "backward": false
+      },
+      {
+        "name": "chunk_size",
+        "type": "attr",
+        "required": true,
+        "dtype": "int",
+        "shape": null,
+        "range_values": 64,
+        "backward": false
+      },
+      {
+        "name": "varlen",
+        "type": "attr",
+        "required": true,
+        "dtype": "bool",
+        "shape": null,
+        "range_values": false,
+        "backward": false
+      },
+      {
+        "name": "cu_seqlens",
+        "type": "attr",
+        "required": true,
+        "dtype": "string",
+        "shape": null,
+        "range_values": "",
+        "backward": false
+      },
+      {
+        "name": "explicit_chunk_indices",
+        "type": "attr",
+        "required": true,
+        "dtype": "bool",
+        "shape": null,
+        "range_values": false,
+        "backward": false
+      },
+      {
+        "name": "reverse",
+        "type": "attr",
+        "required": true,
+        "dtype": "bool",
+        "shape": null,
+        "range_values": false,
+        "backward": false
+      },
+      {
+        "name": "head_first",
+        "type": "attr",
+        "required": true,
+        "dtype": "bool",
+        "shape": null,
+        "range_values": true,
+        "backward": false
+      },
+      {
+        "name": "output_dtype",
+        "type": "attr",
+        "required": true,
+        "dtype": "string",
+        "shape": null,
+        "range_values": "float32",
+        "backward": false
+      }
+    ]
+  },
+  {
+    "id": 1,
+    "default_seed": 20260814,
+    "name": "chunk_local_cumsum",
+    "aclnn_name": "ChunkLocalCumsum",
+    "version": "v2.1",
+    "api": "pytorch",
+    "api_type": "executor_chunk_local_cumsum",
+    "expected_error_msg": null,
+    "backward": false,
+    "standard": {
+      "acc": {
+        "cv_fused_double_benchmark": {
+          "max_re_ratio": 5,
+          "avg_re_ratio": 1.5,
+          "root_mean_squared_ratio": 1.5
+        }
+      },
+      "perf": "not_key"
+    },
+    "outputs": null,
+    "inputs": [
+      {
+        "name": "low_precision_marker",
+        "type": "tensor",
+        "required": true,
+        "dtype": "bf16",
+        "shape": [
+          1
+        ],
+        "range_values": [
+          0,
+          0
+        ],
+        "backward": false
+      },
+      {
+        "name": "fp32_marker",
+        "type": "tensor",
+        "required": true,
+        "dtype": "fp32",
+        "shape": [
+          1
+        ],
+        "range_values": [
+          0,
+          0
+        ],
+        "backward": false
+      },
+      {
+        "name": "case_spec",
+        "type": "attr",
+        "required": true,
+        "dtype": "non_param",
+        "shape": null,
+        "range_values": "{\"B\":1,\"H\":8,\"T\":256,\"case_key\":\"chunk_local_cumsum_001_smoke\",\"chunk_size\":64,\"cu_seqlens\":\"0,128,256\",\"dtype\":\"bf16\",\"explicit_chunk_indices\":true,\"head_first\":true,\"output_dtype\":\"float32\",\"reverse\":true,\"route\":\"ascendc\",\"seed\":20260814,\"soc\":\"ascend910b\",\"tags\":\"accuracy,smoke\",\"varlen\":true}",
+        "backward": false
+      },
+      {
+        "name": "soc",
+        "type": "attr",
+        "required": true,
+        "dtype": "string",
+        "shape": null,
+        "range_values": "ascend910b",
+        "backward": false
+      },
+      {
+        "name": "route",
+        "type": "attr",
+        "required": true,
+        "dtype": "string",
+        "shape": null,
+        "range_values": "ascendc",
+        "backward": false
+      },
+      {
+        "name": "B",
+        "type": "attr",
+        "required": true,
+        "dtype": "int",
+        "shape": null,
+        "range_values": 1,
+        "backward": false
+      },
+      {
+        "name": "H",
+        "type": "attr",
+        "required": true,
+        "dtype": "int",
+        "shape": null,
+        "range_values": 8,
+        "backward": false
+      },
+      {
+        "name": "T",
+        "type": "attr",
+        "required": true,
+        "dtype": "int",
+        "shape": null,
+        "range_values": 256,
+        "backward": false
+      },
+      {
+        "name": "dtype",
+        "type": "attr",
+        "required": true,
+        "dtype": "string",
+        "shape": null,
+        "range_values": "bf16",
+        "backward": false
+      },
+      {
+        "name": "chunk_size",
+        "type": "attr",
+        "required": true,
+        "dtype": "int",
+        "shape": null,
+        "range_values": 64,
+        "backward": false
+      },
+      {
+        "name": "varlen",
+        "type": "attr",
+        "required": true,
+        "dtype": "bool",
+        "shape": null,
+        "range_values": true,
+        "backward": false
+      },
+      {
+        "name": "cu_seqlens",
+        "type": "attr",
+        "required": true,
+        "dtype": "string",
+        "shape": null,
+        "range_values": "0,128,256",
+        "backward": false
+      },
+      {
+        "name": "explicit_chunk_indices",
+        "type": "attr",
+        "required": true,
+        "dtype": "bool",
+        "shape": null,
+        "range_values": true,
+        "backward": false
+      },
+      {
+        "name": "reverse",
+        "type": "attr",
+        "required": true,
+        "dtype": "bool",
+        "shape": null,
+        "range_values": true,
+        "backward": false
+      },
+      {
+        "name": "head_first",
+        "type": "attr",
+        "required": true,
+        "dtype": "bool",
+        "shape": null,
+        "range_values": true,
+        "backward": false
+      },
+      {
+        "name": "output_dtype",
+        "type": "attr",
+        "required": true,
+        "dtype": "string",
+        "shape": null,
+        "range_values": "float32",
+        "backward": false
+      }
+    ]
+  }
+]
+''')
+
+if GENERATOR_REGISTRY is not None:
+    @GENERATOR_REGISTRY.register("generator_chunk_local_cumsum")
+    class ChunkLocalCumsumGenerator(CaseGenerator):
+        def __init__(self, config):
+            super().__init__(config)
+
+        def after_case_config(self, case_config: CaseConfig) -> CaseConfig:
+            return case_config
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--output", default="atk_chunk_local_cumsum.generated.json")
+    parser.add_argument("--summary", action="store_true")
+    args = parser.parse_args()
+    Path(args.output).write_text(json.dumps(CASES, indent=2) + "\n")
+    if args.summary:
+        print("chunk_local_cumsum: " + str(len(CASES)) + " cases -> " + args.output)
+
+
+if __name__ == "__main__":
+    main()
