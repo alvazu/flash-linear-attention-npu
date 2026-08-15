@@ -1,184 +1,88 @@
-# ChunkBwdDqkwg ATK 精度测试归档
+# ChunkBwdDqkwg ATK 测试说明
 
-本目录归档 `chunk_bwd_dqkwg` 算子的 ATK 看护资产。算子仅覆盖 A2
-`ascend910b` 的 `ascendc` route，冻结 2 条 smoke/精度 case，使用同机 CPU
-提供 Torch FP64 真值和同精度 Torch 对照，不依赖 GPU 或独立 ATK server。
+本目录归档 `chunk_bwd_dqkwg` 单算子的 ATK 资产，形式与
+`fla/ops/ascendc/gdn/chunk_gdn_bwd/chunk_bwd_dqkwg/tests/ATK` 保持一致：
+JSON/YAML 使用显式算子输入，executor 直接 import 本目录内的
+`chunk_bwd_dqkwg_cpu.py` 作为 CPU 标杆，不在运行时按源码路径查找。
 
-通用版本、case 范围、精度标准和复检规则见 [`../README.md`](../README.md)。
-
-## 1. 范围
-
-| 项 | 值 |
-| --- | --- |
-| 公开 Python API | `fla_npu.ops.ascendc.chunk_bwd_dqkwg` |
-| ACLNN 名称 | `ChunkBwdDqkwg` |
-| 源算子 | `fla/ops/ascendc/gdn/chunk_gdn_bwd/chunk_bwd_dqkwg` |
-| SOC | `ascend910b`（A2） |
-| route | `ascendc` |
-| 冻结 case | 2 条 smoke/精度 |
-| 精度标准 | ATK `cv_fused_double_benchmark`：`max_re_ratio=5`、`avg_re_ratio=1.5`、`root_mean_squared_ratio=1.5` |
-| 性能 | `perf: not_key` |
-
-冻结 case 矩阵：
-
-| case ID | seed | B | H | HV | T | K | V | chunk_size | dtype | g_dtype | varlen | cu_seqlens | explicit_chunk_indices | state_v_first | tags |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 0 | 20260813 | 1 | 4 | 4 | 128 | 128 | 128 | 64 | bf16 | fp32 | false | "" | false | false | accuracy,smoke |
-| 1 | 20260814 | 1 | 4 | 8 | 256 | 128 | 128 | 64 | fp16 | bf16 | true | "0,128,256" | true | true | accuracy,smoke |
-
-两条 case 共享 `B=1`、`H=4`、`K=V=128`、`chunk_size=64`。case 0
-覆盖固定长度、`HV=4`、`g_dtype=fp32`、无初始状态；case 1 覆盖 varlen
-（`cu_seqlens="0,128,256"`）、`HV=8`、`g_dtype=bf16`、显式 chunk 索引和带初始状态，
-分别验证两种 dtype 与两种序列组织下的 `dq`/`kwg` 反传梯度。
-
-## 2. 文件
+## 文件
 
 ```text
 atk_chunk_bwd_dqkwg.json
 chunk_bwd_dqkwg.yaml
 executor_chunk_bwd_dqkwg.py
 gen_chunk_bwd_dqkwg.py
+chunk_bwd_dqkwg_cpu.py
 README.md
 ```
 
-`executor_chunk_bwd_dqkwg.py` 注册为 `executor_chunk_bwd_dqkwg`，复用
-`_shared/atk_executor_common.py` 的 `GeneratedAtkApiMixin`，NPU 路径调用仓内
-Ascend C ctypes wrapper，CPU 路径提供确定性 PyTorch 参考实现。
+## 输入与约束
 
-## 3. CPU 双标杆拓扑
+输入顺序为 `q, k, v, g, h, do, dh, dv, cu_seqlens, chunk_indices, w,
+g_gamma, scale, chunk_size, is_mix, is_fix, use_exp2, transpose_state_layout,
+qkv_type`。
 
-CPU 双标杆不依赖 GPU，也不需要单独启动 ATK server：
+YAML 已按算子限制收敛：
 
-```text
-NPU host
-  atk task
-  |-- local NPU DUT
-  |-- local CPU same-precision control
-  `-- local CPU Torch FP64 golden
-```
+- `q/k=[B,HK,T,K]`，`v/do/dv=[B,HV,T,V]`，`g=[B,HV,T]`。
+- `h/dh=[B,HV,num_chunks,K,V]`，`num_chunks=ceil(T/chunk_size)`。
+- `HV` 必须是 `HK` 的整数倍。
+- `K=128`，`V=128/256`，`chunk_size=64/128`。
+- `q/k/v/h/do/dh/dv/w` 支持 `bf16/fp16`，`g` 支持 `fp32/bf16/fp16`。
+- `use_exp2=false`，`transpose_state_layout=false`。
 
-普通 CPU 任务使用与算子输入一致的 dtype，并按模型计算边界量化中间结果；
-`cpu_benchmark` 任务使用 Torch FP64 计算真值。ATK 仍使用 YAML 中配置的
-`cv_fused_double_benchmark` 原生双标杆标准，不在 executor 中另设精度阈值。
+当前评审 JSON 保留 1 条源 ATK smoke case：
 
-### 3.1 NPU 环境准备
+| case 序号 | B | HK | HV | T | K | V | chunk_size | qkv_type | g dtype | scale | is_mix | is_fix |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 0 | 1 | 4 | 4 | 128 | 128 | 128 | 64 | fp16 | fp32 | 0.088 | true | true |
 
-在 NPU 机器加载 ATK、CANN、当前构建的 OPP 和仓内 Python 包：
+`w` 和 `g_gamma` 在 YAML/JSON 中均按可选输入标记；executor 会按当前源 ATK
+行为传入 `None`，保持与算子 optional 接口一致。
 
-```bash
-source "$ATK_ENV/bin/activate"
-source <cann_install_path>/set_env.sh
-source <fla_npu_install_path>/vendors/fla_npu_transformer/bin/set_env.bash
+## Executor 行为
 
-export ASCEND_RT_VISIBLE_DEVICES=<physical_npu_device>
-export PYTHONPATH="$REPO_ROOT/torch_custom/fla_npu:$REPO_ROOT:${PYTHONPATH:-}"
-export TORCH_EXTENSIONS_DIR=<writable_cache_dir>
+`executor_chunk_bwd_dqkwg.py` 注册 `executor_chunk_bwd_dqkwg`：
 
-cd "$REPO_ROOT/test/chunk_bwd_dqkwg"
-atk --version
-python -c 'import fla_npu; from fla_npu.ops.ascendc import chunk_bwd_dqkwg; print(fla_npu.__file__)'
-npu-smi info -i <physical_npu_device>
-```
+- NPU 路径调用 `fla_npu.ops.ascendc.npu_chunk_bwd_dqkwg`，若该路径不可用则回退到
+  `torch.ops.npu.npu_chunk_bwd_dqkwg`。
+- CPU 同精度路径调用本目录 `chunk_bwd_dqkwg_cpu.py`，输出保持同精度 dtype。
+- CPU 高精度路径在 ATK benchmark task 中使用 `float64` 标杆，输出保持 `float64`。
 
-先构建匹配的 OPP 包：
+## 一键执行
+
+在仓库根目录执行：
 
 ```bash
-bash build.sh --pkg --soc=ascend910b \
-  --vendor_name=fla_npu --ops=chunk_bwd_dqkwg
+bash tests/atk/run_test_cpu.sh \
+  -op=chunk_bwd_dqkwg \
+  -npu_device_id=<physical_npu_device>
 ```
 
-`atk --version` 应为 `26.7.8`。若设置 `ASCEND_RT_VISIBLE_DEVICES`，后续 ATK
-`node --devices` 传映射后的逻辑编号，不要同时传物理编号。
-
-### 3.2 执行命令
+常用范围变量：
 
 ```bash
-atk node --name npu_dut --backend npu --devices 0 \
-    --output_path ./atk_output/cpu_dual_reference \
-  node --name cpu_reference --backend cpu \
-    --output_path ./atk_output/cpu_dual_reference \
-  task \
-    -c ./atk_chunk_bwd_dqkwg.json \
-    --task accuracy \
-    --bm_device cpu \
-    -p ./executor_chunk_bwd_dqkwg.py \
-    -s 0 \
-    -e 2 \
-    -sp \
-    -mt 1 \
-    -to 14400
+CASE_START=0 CASE_END=1 bash tests/atk/run_test_cpu.sh \
+  -op=chunk_bwd_dqkwg \
+  -npu_device_id=<physical_npu_device>
 ```
 
-`-s 0 -e 2` 覆盖全部 2 条 case。`-sp` 使两条 case 复用 CPU 标杆缓存；每条 NPU
-DUT 仍独立执行。
+脚本会通过 ATK 覆盖 CPU 双标杆精度、性能、确定性和 mssanitizer；所有范围均使用
+`-s <start> -e <end>` 表示 JSON 顺序中的第几个 case。
 
-只有最终报告同时满足 `Total Task: 2, success 2, failed 0` 和
-`acc_pass_result: Pass` 才能作为全量精度通过结论。仅执行成功或输出全为有限值
-不等价于精度通过。
+## 重新生成
 
-## 4. 生成与校验
+只在需要扩展 case 矩阵时使用 ATK 生成器：
 
 ```bash
-cd "$REPO_ROOT/test/chunk_bwd_dqkwg"
+cd "$REPO_ROOT/tests/atk/chunk_bwd_dqkwg"
 atk case \
   -f ./chunk_bwd_dqkwg.yaml \
   -p ./gen_chunk_bwd_dqkwg.py \
   -dt 1 \
   -en 0 \
   -s 20260813
-
-python3 ./gen_chunk_bwd_dqkwg.py \
-  --output ./atk_chunk_bwd_dqkwg.generated.json \
-  --summary
 ```
 
-相同 YAML、gen 和 seed 必须生成稳定 case ID 与稳定结构。生成后检查 ATK schema、
-case 数量、SOC、route、layout、chunk 边界、可选输入和覆盖摘要，不要静默覆盖已评审的
-`atk_chunk_bwd_dqkwg.json`。
-
-## 5. 单 case 定位
-
-定位某一条 case 时保留 `--save_data output`，并分析三路结果：
-
-```bash
-atk node --name npu_dut --backend npu --devices 0 \
-    --output_path ./atk_output/case_debug \
-  node --name cpu_reference --backend cpu \
-    --output_path ./atk_output/case_debug \
-  task \
-    -c ./atk_chunk_bwd_dqkwg.json \
-    --task accuracy \
-    --bm_device cpu \
-    -p ./executor_chunk_bwd_dqkwg.py \
-    -s <case_index> \
-    -e <case_index_plus_one> \
-    --save_data output \
-    -sp \
-    -mt 1 \
-    -to 14400
-```
-
-保存输出后可用 ATK 配套 CT 工具对失败输出做三路可视化：
-
-```bash
-ct viz \
-  <npu_output_0.pt> \
-  <cpu_benchmark_output_0.pt> \
-  <cpu_control_output_0.pt> \
-  --out_dir <viz_output_dir> \
-  --name chunk_bwd_dqkwg_out \
-  --spatial
-```
-
-## 6. 常见失败
-
-| 现象 | 原因与处理 |
-| --- | --- |
-| NPU 报 `No module named 'fla_npu'` | `PYTHONPATH` 未包含 `torch_custom/fla_npu`，或当前 OPP/Python 包不是同一提交。按第 3.1 节重新加载。 |
-| NPU 报算子不存在 | 未构建/安装匹配 SOC 的 OPP 包。按第 3.1 节构建 `ascend910b` 的 `chunk_bwd_dqkwg` OPP。 |
-| 设备号不可用 | 物理设备经 `ASCEND_RT_VISIBLE_DEVICES` 后会重新编号；ATK 使用映射后的逻辑编号。 |
-| 执行成功但 `acc_pass_result: Failed` | 检查 ATK 报告中每条 case 的 `max_re_ratio`、`avg_re_ratio`、`root_mean_squared_ratio` 是否超出阈值；保存输出用 `ct viz` 定位结构性差异。 |
-| 生成结果与已评审 JSON 不一致 | 比较生成器、YAML 和 seed；不要静默覆盖 `atk_chunk_bwd_dqkwg.json`。 |
-
-结果归档和公开 PR/issue 只记录测试项、case 范围、通过/失败结论和必要的非敏感错误摘要，
-不得记录服务器地址、账号、绝对路径、容器名、token 或内部日志路径。
+生成后需要人工确认 JSON 输入顺序、dtype、shape、`scale`、`chunk_size`、optional
+输入语义和算子限制，再决定是否覆盖 `atk_chunk_bwd_dqkwg.json`。

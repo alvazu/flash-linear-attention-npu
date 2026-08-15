@@ -1,438 +1,76 @@
-"""Deterministic ATK matrix generator for chunk_bwd_dqkwg."""
+# Copyright (c) Tianjin University, Ltd. 2025. All rights reserved.
+import random
 
-from __future__ import annotations
-
-import argparse
-import json
-from pathlib import Path
-
-try:
-    from atk.case_generator.generator.base_generator import CaseGenerator
-    from atk.case_generator.generator.generate_types import GENERATOR_REGISTRY
-    from atk.configs.case_config import CaseConfig
-except ModuleNotFoundError as exc:
-    if exc.name != "atk":
-        raise
-    CaseGenerator = None
-    GENERATOR_REGISTRY = None
-    CaseConfig = None
-
-CASES = json.loads(r'''
-[
-  {
-    "id": 0,
-    "default_seed": 20260813,
-    "name": "chunk_bwd_dqkwg",
-    "aclnn_name": "ChunkBwdDqkwg",
-    "version": "v2.1",
-    "api": "pytorch",
-    "api_type": "executor_chunk_bwd_dqkwg",
-    "expected_error_msg": null,
-    "backward": true,
-    "standard": {
-      "acc": {
-        "cv_fused_double_benchmark": {
-          "max_re_ratio": 5,
-          "avg_re_ratio": 1.5,
-          "root_mean_squared_ratio": 1.5
-        }
-      },
-      "perf": "not_key"
-    },
-    "outputs": null,
-    "inputs": [
-      {
-        "name": "low_precision_marker",
-        "type": "tensor",
-        "required": true,
-        "dtype": "bf16",
-        "shape": [
-          1
-        ],
-        "range_values": [
-          0,
-          0
-        ],
-        "backward": false
-      },
-      {
-        "name": "fp32_marker",
-        "type": "tensor",
-        "required": true,
-        "dtype": "fp32",
-        "shape": [
-          1
-        ],
-        "range_values": [
-          0,
-          0
-        ],
-        "backward": false
-      },
-      {
-        "name": "case_spec",
-        "type": "attr",
-        "required": true,
-        "dtype": "non_param",
-        "shape": null,
-        "range_values": "{\"B\":1,\"H\":4,\"HV\":4,\"K\":128,\"T\":128,\"V\":128,\"case_key\":\"chunk_bwd_dqkwg_000_smoke\",\"chunk_size\":64,\"cu_seqlens\":\"\",\"dtype\":\"bf16\",\"explicit_chunk_indices\":false,\"g_dtype\":\"fp32\",\"route\":\"ascendc\",\"seed\":20260813,\"soc\":\"ascend910b\",\"state_v_first\":false,\"tags\":\"accuracy,smoke\",\"varlen\":false}",
-        "backward": false
-      },
-      {
-        "name": "soc",
-        "type": "attr",
-        "required": true,
-        "dtype": "string",
-        "shape": null,
-        "range_values": "ascend910b",
-        "backward": false
-      },
-      {
-        "name": "route",
-        "type": "attr",
-        "required": true,
-        "dtype": "string",
-        "shape": null,
-        "range_values": "ascendc",
-        "backward": false
-      },
-      {
-        "name": "B",
-        "type": "attr",
-        "required": true,
-        "dtype": "int",
-        "shape": null,
-        "range_values": 1,
-        "backward": false
-      },
-      {
-        "name": "H",
-        "type": "attr",
-        "required": true,
-        "dtype": "int",
-        "shape": null,
-        "range_values": 4,
-        "backward": false
-      },
-      {
-        "name": "HV",
-        "type": "attr",
-        "required": true,
-        "dtype": "int",
-        "shape": null,
-        "range_values": 4,
-        "backward": false
-      },
-      {
-        "name": "T",
-        "type": "attr",
-        "required": true,
-        "dtype": "int",
-        "shape": null,
-        "range_values": 128,
-        "backward": false
-      },
-      {
-        "name": "K",
-        "type": "attr",
-        "required": true,
-        "dtype": "int",
-        "shape": null,
-        "range_values": 128,
-        "backward": false
-      },
-      {
-        "name": "V",
-        "type": "attr",
-        "required": true,
-        "dtype": "int",
-        "shape": null,
-        "range_values": 128,
-        "backward": false
-      },
-      {
-        "name": "dtype",
-        "type": "attr",
-        "required": true,
-        "dtype": "string",
-        "shape": null,
-        "range_values": "bf16",
-        "backward": false
-      },
-      {
-        "name": "g_dtype",
-        "type": "attr",
-        "required": true,
-        "dtype": "string",
-        "shape": null,
-        "range_values": "fp32",
-        "backward": false
-      },
-      {
-        "name": "chunk_size",
-        "type": "attr",
-        "required": true,
-        "dtype": "int",
-        "shape": null,
-        "range_values": 64,
-        "backward": false
-      },
-      {
-        "name": "varlen",
-        "type": "attr",
-        "required": true,
-        "dtype": "bool",
-        "shape": null,
-        "range_values": false,
-        "backward": false
-      },
-      {
-        "name": "cu_seqlens",
-        "type": "attr",
-        "required": true,
-        "dtype": "string",
-        "shape": null,
-        "range_values": "",
-        "backward": false
-      },
-      {
-        "name": "explicit_chunk_indices",
-        "type": "attr",
-        "required": true,
-        "dtype": "bool",
-        "shape": null,
-        "range_values": false,
-        "backward": false
-      },
-      {
-        "name": "state_v_first",
-        "type": "attr",
-        "required": true,
-        "dtype": "bool",
-        "shape": null,
-        "range_values": false,
-        "backward": false
-      }
-    ]
-  },
-  {
-    "id": 1,
-    "default_seed": 20260814,
-    "name": "chunk_bwd_dqkwg",
-    "aclnn_name": "ChunkBwdDqkwg",
-    "version": "v2.1",
-    "api": "pytorch",
-    "api_type": "executor_chunk_bwd_dqkwg",
-    "expected_error_msg": null,
-    "backward": true,
-    "standard": {
-      "acc": {
-        "cv_fused_double_benchmark": {
-          "max_re_ratio": 5,
-          "avg_re_ratio": 1.5,
-          "root_mean_squared_ratio": 1.5
-        }
-      },
-      "perf": "not_key"
-    },
-    "outputs": null,
-    "inputs": [
-      {
-        "name": "low_precision_marker",
-        "type": "tensor",
-        "required": true,
-        "dtype": "bf16",
-        "shape": [
-          1
-        ],
-        "range_values": [
-          0,
-          0
-        ],
-        "backward": false
-      },
-      {
-        "name": "fp32_marker",
-        "type": "tensor",
-        "required": true,
-        "dtype": "fp32",
-        "shape": [
-          1
-        ],
-        "range_values": [
-          0,
-          0
-        ],
-        "backward": false
-      },
-      {
-        "name": "case_spec",
-        "type": "attr",
-        "required": true,
-        "dtype": "non_param",
-        "shape": null,
-        "range_values": "{\"B\":1,\"H\":4,\"HV\":8,\"K\":128,\"T\":256,\"V\":128,\"case_key\":\"chunk_bwd_dqkwg_001_smoke\",\"chunk_size\":64,\"cu_seqlens\":\"0,128,256\",\"dtype\":\"fp16\",\"explicit_chunk_indices\":true,\"g_dtype\":\"bf16\",\"route\":\"ascendc\",\"seed\":20260814,\"soc\":\"ascend910b\",\"state_v_first\":true,\"tags\":\"accuracy,smoke\",\"varlen\":true}",
-        "backward": false
-      },
-      {
-        "name": "soc",
-        "type": "attr",
-        "required": true,
-        "dtype": "string",
-        "shape": null,
-        "range_values": "ascend910b",
-        "backward": false
-      },
-      {
-        "name": "route",
-        "type": "attr",
-        "required": true,
-        "dtype": "string",
-        "shape": null,
-        "range_values": "ascendc",
-        "backward": false
-      },
-      {
-        "name": "B",
-        "type": "attr",
-        "required": true,
-        "dtype": "int",
-        "shape": null,
-        "range_values": 1,
-        "backward": false
-      },
-      {
-        "name": "H",
-        "type": "attr",
-        "required": true,
-        "dtype": "int",
-        "shape": null,
-        "range_values": 4,
-        "backward": false
-      },
-      {
-        "name": "HV",
-        "type": "attr",
-        "required": true,
-        "dtype": "int",
-        "shape": null,
-        "range_values": 8,
-        "backward": false
-      },
-      {
-        "name": "T",
-        "type": "attr",
-        "required": true,
-        "dtype": "int",
-        "shape": null,
-        "range_values": 256,
-        "backward": false
-      },
-      {
-        "name": "K",
-        "type": "attr",
-        "required": true,
-        "dtype": "int",
-        "shape": null,
-        "range_values": 128,
-        "backward": false
-      },
-      {
-        "name": "V",
-        "type": "attr",
-        "required": true,
-        "dtype": "int",
-        "shape": null,
-        "range_values": 128,
-        "backward": false
-      },
-      {
-        "name": "dtype",
-        "type": "attr",
-        "required": true,
-        "dtype": "string",
-        "shape": null,
-        "range_values": "fp16",
-        "backward": false
-      },
-      {
-        "name": "g_dtype",
-        "type": "attr",
-        "required": true,
-        "dtype": "string",
-        "shape": null,
-        "range_values": "bf16",
-        "backward": false
-      },
-      {
-        "name": "chunk_size",
-        "type": "attr",
-        "required": true,
-        "dtype": "int",
-        "shape": null,
-        "range_values": 64,
-        "backward": false
-      },
-      {
-        "name": "varlen",
-        "type": "attr",
-        "required": true,
-        "dtype": "bool",
-        "shape": null,
-        "range_values": true,
-        "backward": false
-      },
-      {
-        "name": "cu_seqlens",
-        "type": "attr",
-        "required": true,
-        "dtype": "string",
-        "shape": null,
-        "range_values": "0,128,256",
-        "backward": false
-      },
-      {
-        "name": "explicit_chunk_indices",
-        "type": "attr",
-        "required": true,
-        "dtype": "bool",
-        "shape": null,
-        "range_values": true,
-        "backward": false
-      },
-      {
-        "name": "state_v_first",
-        "type": "attr",
-        "required": true,
-        "dtype": "bool",
-        "shape": null,
-        "range_values": true,
-        "backward": false
-      }
-    ]
-  }
-]
-''')
-
-if GENERATOR_REGISTRY is not None:
-    @GENERATOR_REGISTRY.register("generator_chunk_bwd_dqkwg")
-    class ChunkBwdDqkwgGenerator(CaseGenerator):
-        def __init__(self, config):
-            super().__init__(config)
-
-        def after_case_config(self, case_config: CaseConfig) -> CaseConfig:
-            return case_config
+from atk.case_generator.generator.generate_types import GENERATOR_REGISTRY
+from atk.case_generator.generator.base_generator import CaseGenerator
+from atk.configs.case_config import CaseConfig
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--output", default="atk_chunk_bwd_dqkwg.generated.json")
-    parser.add_argument("--summary", action="store_true")
-    args = parser.parse_args()
-    Path(args.output).write_text(json.dumps(CASES, indent=2) + "\n")
-    if args.summary:
-        print("chunk_bwd_dqkwg: " + str(len(CASES)) + " cases -> " + args.output)
+Q_INDEX = 0
+K_INDEX = 1
+V_INDEX = 2
+G_INDEX = 3
+H_INDEX = 4
+DO_INDEX = 5
+DH_INDEX = 6
+DV_INDEX = 7
+W_INDEX = 10
+G_GAMMA_INDEX = 11
+CHUNK_SIZE_INDEX = 13
+IS_MIX_INDEX = 14
+IS_FIX_INDEX = 15
+USE_EXP2_INDEX = 16
+TRANSPOSE_STATE_LAYOUT_INDEX = 17
+QKV_TYPE_INDEX = 18
 
 
-if __name__ == "__main__":
-    main()
+@GENERATOR_REGISTRY.register("generator_chunk_bwd_dqkwg")
+class ChunkBwdDqkwgGenerator(CaseGenerator):
+    def __init__(self, config):
+        super().__init__(config)
+
+    def after_case_config(self, case_config: CaseConfig) -> CaseConfig:
+        qkv_type = case_config.inputs[Q_INDEX].dtype
+        case_config.inputs[K_INDEX].dtype = qkv_type
+        case_config.inputs[V_INDEX].dtype = qkv_type
+        case_config.inputs[DO_INDEX].dtype = qkv_type
+        case_config.inputs[DH_INDEX].dtype = qkv_type
+        case_config.inputs[DV_INDEX].dtype = qkv_type
+        case_config.inputs[W_INDEX].dtype = qkv_type
+        case_config.inputs[H_INDEX].dtype = qkv_type
+        case_config.inputs[QKV_TYPE_INDEX].range_values = qkv_type
+
+        is_mix = case_config.inputs[IS_MIX_INDEX].range_values
+        case_config.inputs[G_INDEX].dtype = "fp32" if is_mix else qkv_type
+
+        is_fix = case_config.inputs[IS_FIX_INDEX].range_values
+        B, H, T, _ = case_config.inputs[Q_INDEX].shape
+        if not is_fix:
+            B = 1
+        K = 128
+        V = random.choice((128, 256))
+        chunk_size = case_config.inputs[CHUNK_SIZE_INDEX].range_values
+        if isinstance(chunk_size, list):
+            chunk_size = chunk_size[0]
+
+        # HV 必须是 HK 的整数倍，这里覆盖 n_ratio=1/2 两类分组场景。
+        n_ratio = random.choice((1, 2))
+        HK = H
+        HV = HK * n_ratio
+
+        num_chunks = (T + chunk_size - 1) // chunk_size
+
+        # q, k: [B, HK, T, K]; v, dox, dv: [B, HV, T, V]
+        # g: [B, HV, T]; h, dh: [B, HV, num_chunks, K, V]
+        # outputs: dq, dk: [B, HK, T, K]; dw: [B, HV, T, K]; dg: [B, HV, T]
+        case_config.inputs[Q_INDEX].shape = [B, HK, T, K]
+        case_config.inputs[K_INDEX].shape = [B, HK, T, K]
+        case_config.inputs[V_INDEX].shape = [B, HV, T, V]
+        case_config.inputs[G_INDEX].shape = [B, HV, T]
+        case_config.inputs[H_INDEX].shape = [B, HV, num_chunks, K, V]
+        case_config.inputs[DO_INDEX].shape = [B, HV, T, V]
+        case_config.inputs[DH_INDEX].shape = [B, HV, num_chunks, K, V]
+        case_config.inputs[DV_INDEX].shape = [B, HV, T, V]
+        case_config.inputs[W_INDEX].shape = [B, HV, T, K]
+
+        return case_config

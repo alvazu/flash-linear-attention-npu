@@ -59,11 +59,13 @@
 
 不要通过收窄输入 range、删除失败 case、降低覆盖强度或放宽阈值来制造通过结论。
 
-## 单算子 ATK 一键验证
+## 单算子 ATK CPU 标杆一键验证
 
-仓内单算子 NPU 看护使用 `tests/atk/run_test.sh` 统一调度。脚本只支持
-`-op=chunk_kda_fwd`，所有测试动作都通过 ATK 发起；mssanitizer 阶段也只是在外层包裹
-同一条 ATK `task` 命令。
+仓内单算子 NPU 看护使用 `tests/atk/run_test_cpu.sh` 调度 CPU 标杆流程。脚本不按算子名写
+特殊分支，只要求 `tests/atk/<op>` 下存在 `atk_<op>.json` 和 `executor_<op>.py`。所有测试
+动作都通过 ATK 发起；mssanitizer 阶段也只是在外层包裹同一条 ATK `task` 命令。该流程
+不需要远端标杆服务：ATK 的 `--bm_device cpu` 负责 CPU 高精度真值，普通
+`node --backend cpu` 负责 CPU 同精度对照。
 
 ### 前置准备
 
@@ -77,118 +79,122 @@ source <fla_npu_install_path>/vendors/fla_npu_transformer/bin/set_env.bash
 
 export PYTHONPATH="<repo_root>/torch_custom/fla_npu:<repo_root>:${PYTHONPATH:-}"
 export TORCH_EXTENSIONS_DIR=<writable_cache_dir>
+
 atk --version
 npu-smi info -i <physical_npu_device>
 ```
 
-`atk --version` 应与 `tests/atk/README.md` 中锁定版本一致。脚本会根据
-`-npu_device_id=<physical_npu_device>` 设置 `ASCEND_RT_VISIBLE_DEVICES`，所以后续
-ATK 命令固定使用映射后的逻辑设备 `--devices 0`。不要在外部再把
-`ASCEND_RT_VISIBLE_DEVICES` 设置成另一张卡。
-
-双标杆精度和确定性验证需要可达的 GPU ATK server。GPU 节点加载 ATK、CUDA Torch、Triton
-和同提交的 `chunk_kda_fwd` ATK 资产后启动：
-
-```bash
-cd <repo_root>/tests/atk/chunk_kda_fwd
-source <gpu_atk_venv>/bin/activate
-export CUDA_VISIBLE_DEVICES=<physical_gpu_device>
-export PYTHONPATH="<triton_kda_source_root>:<repo_root>:${PYTHONPATH:-}"
-unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY
-
-atk server \
-  --host 0.0.0.0 \
-  --port <gpu_server_port> \
-  --devices 0 \
-  --name gpu_reference \
-  --output_path ./atk_output/gpu_server \
-  --plugin_path ./executor_chunk_kda_fwd.py \
-  --timeout 8000
-```
-
-GPU server 的 `--devices` 使用 `CUDA_VISIBLE_DEVICES` 映射后的逻辑设备号。发起端传给
-`run_test.sh` 的 `-gpu_host` 和 `-gpu_port` 必须是 NPU 节点能够访问到的地址和端口。
+`atk --version` 应与 `tests/atk/README.md` 中锁定版本一致。脚本会把
+`-npu_device_id=<physical_npu_device>` 直接传给 ATK `node --devices`，例如
+`-npu_device_id=6` 对应 `--devices 6`。不要在外部额外设置
+`ASCEND_RT_VISIBLE_DEVICES` 造成设备号再次重映射。
 
 mssanitizer 阶段需要使用带 sanitizer 信息的 debug OPP 包。构建时确认 `opc` 命令包含
 `--op_debug_level=1 --op_debug_config=dump_cce,sanitizer`，执行前抽查目标对象中存在
 sanitizer 符号：
 
 ```bash
-nm <chunk_kda_fwd_object> | grep sanitizer
+nm <target_op_object> | grep sanitizer
 ```
+
+`chunk_bwd_dqkwg` 的 ATK CPU 标杆使用
+`tests/atk/chunk_bwd_dqkwg/chunk_bwd_dqkwg_cpu.py` 本地副本，executor 直接 import，
+不在运行时按源码路径查找。
+该算子本身是反向单算子，ATK case 顶层 `backward` 必须保持为 `false`，按“前向调用一个
+反向算子”的方式做精度、性能、确定性和内存检测。
 
 ### 一键执行
 
-在仓库根目录执行：
+在仓库根目录执行，`-op` 传 ATK 算子目录名：
 
 ```bash
-bash tests/atk/run_test.sh \
-  -op=chunk_kda_fwd \
-  -npu_device_id=<physical_npu_device> \
-  -gpu_host=<gpu_server_host> \
-  -gpu_port=<gpu_server_port>
+bash tests/atk/run_test_cpu.sh \
+  -op=<op> \
+  -npu_device_id=<physical_npu_device>
 ```
 
-默认执行 `all`，顺序为双标杆精度、性能、确定性和 mssanitizer。需要单独跑某一项时使用
+示例：
+
+```bash
+bash tests/atk/run_test_cpu.sh \
+  -op=chunk_kda_fwd \
+  -npu_device_id=<physical_npu_device>
+```
+
+默认执行 `all`，顺序为 CPU 双标杆精度、性能、确定性和 mssanitizer。需要单独跑某一项时使用
 `-scope=accuracy`、`-scope=performance`、`-scope=determinism` 或
 `-scope=mssanitizer`。常用覆盖参数：
 
 ```bash
-ATK_TIMEOUT=2000
-PERFORMANCE_DATA=20,100,80
-DC_LOOP_NUMS=50
-MSS_TOOLS="memcheck racecheck initcheck synccheck"
+ATK_TIMEOUT=14400
+CASE_START=0
+CASE_END=1
+ACCURACY_START=0
+ACCURACY_END=1
+PERFORMANCE_START=0
+PERFORMANCE_END=1
+DETERMINISM_START=0
+DETERMINISM_END=1
+MSS_START=0
+MSS_END=1
+PERFORMANCE_TIMEOUT=2000
+MSS_TOOL=memcheck
+MSS_LOG_PATH=/home/huangjunzhe/gdn/github/alvazu-atk/flash-linear-attention-npu/fla/ops/ascendc/gdn/chunk_gdn_bwd/chunk_bwd_dqkwg/tests/ATK/log.txt
 ```
 
-脚本默认自动识别 SOC。自动识别失败时按 A2 `ascend910b` 执行；A5 可显式传入
-`-soc=ascend950`。精度范围由脚本从 `atk_chunk_kda_fwd.json` 中按 SOC 和正向用例自动计算，
-也可以通过 `ACCURACY_START` 和 `ACCURACY_END` 覆盖。当前 `chunk_kda_fwd` 固定专项 case：
+脚本默认自动识别 SOC。自动识别失败时按 A2 `ascend910b` 执行；A3 和 A5 可显式传入
+`-soc=ascend910_93` 或 `-soc=ascend950`。A2、A3、A5 都使用同一套 ATK 命令和同一套
+用例序号范围，不再按算子名或 SOC 写死 case ID。
 
-| 平台 | 性能 case | 确定性 case | mssanitizer case |
-| --- | --- | --- | --- |
-| A2 `ascend910b` | `-wl '[0,16]'` | `-wl '[4,18]'` | `-wl '[8,16]'` |
-| A5 `ascend950` | `-wl '[250,266]'` | `-wl '[254,268]'` | `-wl '[258,266]'` |
+ATK 文档 `ATK/docs/ATK使用指南/01 基础操作/任务执行.md` 说明 `--start 0 --end 2`
+表示只执行下标 0 和 1；`ATK/docs/ATK使用指南/02 参考资料/任务执行参数说明.md` 也将
+`-s/--start`、`-e/--end` 定义为执行起始和结束用例下标。因此 case id 混乱时只使用
+`-s 0 -e 1` 这类序号切片表达“第几个 case”，不要用 `-wl` 依赖 JSON 内部 id。
+默认 `CASE_START=0 CASE_END=1`，即每个阶段默认跑第 1 条 case。全量或专项范围由调用者按
+生成后的 JSON 顺序覆盖各阶段 `*_START/*_END`。
 
 ### 脚本覆盖的 ATK 动作
 
-双标杆精度验证使用 GPU 高精度真值和 GPU 同精度对照。`<accuracy_start>` 与
-`<accuracy_end>` 默认来自当前 JSON 中对应 SOC 的正向用例范围：
+精度与 NaN 检测使用 CPU 高精度真值和 CPU 同精度对照，并开启 `--gm_init_flag`：
 
 ```bash
-atk node --name npu_dut --backend npu --devices 0 \
-  node --name gpu_reference --backend gpu --host <gpu_host> --port <gpu_port> --devices 0 --is_compare true \
-  task -c ./atk_chunk_kda_fwd.json --task accuracy --bm_device gpu -p ./executor_chunk_kda_fwd.py \
-  -s <accuracy_start> -e <accuracy_end> --syc_dataset -mt 1 -to <timeout>
+atk node --name npu_dut --backend npu --devices <npu_device_id> \
+    --output_path ./atk_output/cpu_dual_reference \
+  node --name cpu_reference --backend cpu \
+    --output_path ./atk_output/cpu_dual_reference \
+  task -c ./atk_<op>.json --task accuracy --bm_device cpu -p ./executor_<op>.py \
+  -s <accuracy_start> -e <accuracy_end> --gm_init_flag -sp -mt 1 -to 14400
 ```
 
-性能对比验证只使用 ATK `performance_device` 的 device profiler：
+性能验证只使用 ATK `performance_device` 的 device profiler：
 
 ```bash
-atk node --name npu_dut --backend npu --devices 0 \
-  task -c ./atk_chunk_kda_fwd.json --task performance_device -p ./executor_chunk_kda_fwd.py \
-  -wl '<performance_cases>' --performance_data 20,100,80 --save_data profile -sp -to <timeout>
+atk node --name npu_dut --backend npu --devices <npu_device_id> \
+    --output_path ./atk_output/perf \
+  task -c ./atk_<op>.json --task performance_device -p ./executor_<op>.py \
+  -s <performance_start> -e <performance_end> --save_data profile -sp -to 2000
 ```
 
-确定性验证使用 ATK `accuracy_dc`，并开启 `--gm_init_flag`：
+确定性验证使用 ATK `accuracy_dc`：
 
 ```bash
-atk node --name npu_dut --backend npu --devices 0 \
-  node --name gpu_reference --backend gpu --host <gpu_host> --port <gpu_port> --devices 0 --is_compare true \
-  task -c ./atk_chunk_kda_fwd.json --task accuracy_dc --bm_device gpu -p ./executor_chunk_kda_fwd.py \
-  -wl '<determinism_cases>' --gm_init_flag --syc_dataset -mt 1 -to <timeout>
+atk node --name npu_dut --backend npu --devices <npu_device_id> \
+  task -c ./atk_<op>.json -p ./executor_<op>.py --task accuracy_dc \
+  -s <determinism_start> -e <determinism_end>
 ```
 
-内存检测由 `mssanitizer --tool=<tool>` 包裹 ATK `run` 任务，不叠加 ATK 自身的 `-ms`：
+内存检测由 `mssanitizer --tool=memcheck` 包裹 ATK `run` 任务，并在 ATK task 中传入
+`--mssanitizer -msl <log_path>`：
 
 ```bash
-mssanitizer --tool=memcheck --log-file ./mssanitizer_memcheck.log -- \
-  atk node --name npu_dut --backend npu --devices 0 \
-  task -c ./atk_chunk_kda_fwd.json --task run -p ./executor_chunk_kda_fwd.py \
-  -wl '<mssanitizer_cases>' -sp -to <timeout>
+mssanitizer --tool=memcheck -- \
+  atk node --name npu_dut --backend npu --devices <npu_device_id> \
+  task -c ./atk_<op>.json -p ./executor_<op>.py --task run --mssanitizer \
+  -msl /home/huangjunzhe/gdn/github/alvazu-atk/flash-linear-attention-npu/fla/ops/ascendc/gdn/chunk_gdn_bwd/chunk_bwd_dqkwg/tests/ATK/log.txt \
+  -s <mssanitizer_start> -e <mssanitizer_end>
 ```
 
-`racecheck`、`initcheck` 和 `synccheck` 只替换 `--tool` 与日志名。每一项都必须同时检查
-ATK 总任务数、失败数、精度或专项结论，以及 mssanitizer 日志是否真正命中目标 kernel。
+每一项都必须同时检查 ATK 总任务数、失败数、精度或专项结论，以及 mssanitizer 日志是否真正命中目标 kernel。
 没有命中 sanitizer 或报告中存在 failed case 时，本次验证不能记为通过。
 
 ## 结果记录
