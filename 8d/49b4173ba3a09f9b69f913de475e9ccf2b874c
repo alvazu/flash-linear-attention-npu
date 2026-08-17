@@ -1,0 +1,12 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "8d49b4173ba3a09f9b69f913de475e9ccf2b874c",
+  "prompts": {},
+  "humans": {
+    "h_1aac240b771fd0": {
+      "author": "alvazu <huangjz@thormind.com>"
+    }
+  }
+}
