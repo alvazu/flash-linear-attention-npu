@@ -1,0 +1,14 @@
+README.md
+  h_1aac240b771fd0 188-201,203,206,208-220,222-223
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "9ac91e35ca4f4980e3873861d12e1fe087db7fd4",
+  "prompts": {},
+  "humans": {
+    "h_1aac240b771fd0": {
+      "author": "alvazu <huangjz@thormind.com>"
+    }
+  }
+}
