@@ -1,157 +1,106 @@
-"""ATK executor for causal_conv1d_bwd."""
+"""causal_conv1d_bwd 的 ATK executor。
+
+输入生成、CPU 标杆、run_cpu、run_npu 和 FunctionApi 都放在本算子目录中。
+"""
 
 from __future__ import annotations
 
-import json
+import math
+import sys
+from pathlib import Path
+from typing import Any
 
 import torch
+import torch.nn.functional as F
 
-try:
-    import numpy as np
-
-    torch.serialization.add_safe_globals(
-        [
-            np.core.multiarray.scalar,
-            np.dtype,
-            type(np.dtype(np.float32)),
-            type(np.dtype(np.float64)),
-            type(np.dtype(np.int32)),
-            type(np.dtype(np.int64)),
-        ]
-    )
-except (AttributeError, ImportError):
-    pass
-
-
-_DTYPES = {
-    "bf16": torch.bfloat16,
-    "bfloat16": torch.bfloat16,
-    "fp16": torch.float16,
-    "float16": torch.float16,
-    "fp32": torch.float32,
-    "float32": torch.float32,
-}
-
-
-def _as_bool(value) -> bool:
-    if isinstance(value, str):
-        return value.lower() in {"1", "true", "yes"}
-    return bool(value)
-
-
-def _dtype(name: str) -> torch.dtype:
-    try:
-        return _DTYPES[str(name)]
-    except KeyError as exc:
-        raise ValueError(f"unsupported dtype {name!r}") from exc
-
-
-def _seed(spec: dict, offset: int = 0) -> int:
-    return int(spec.get("seed", 20260813)) + offset
-
-
-def _rand(shape, dtype, device, seed, *, low=-0.08, high=0.08):
-    generator = torch.Generator(device="cpu")
-    generator.manual_seed(int(seed))
-    value = torch.rand(tuple(int(x) for x in shape), generator=generator, dtype=torch.float32)
-    value = value.mul(float(high) - float(low)).add(float(low)).to(dtype)
-    return value.to(device).contiguous()
-
-
-def _normal(shape, dtype, device, seed, *, scale=0.08, bias=0.0):
-    generator = torch.Generator(device="cpu")
-    generator.manual_seed(int(seed))
-    value = torch.randn(tuple(int(x) for x in shape), generator=generator, dtype=torch.float32)
-    value = value.mul(float(scale)).add(float(bias)).to(dtype)
-    return value.to(device).contiguous()
-
-
-def _finite_tuple(outputs) -> tuple[torch.Tensor, ...]:
-    if isinstance(outputs, torch.Tensor):
-        outputs = (outputs,)
-    visible = []
-    for output in outputs:
-        if isinstance(output, torch.Tensor):
-            tensor = output.to(torch.float32) if output.is_floating_point() else output
-            if not torch.isfinite(tensor.to(torch.float32)).all().item():
-                raise RuntimeError("operator output contains NaN or Inf")
-            visible.append(tensor.contiguous())
-    if not visible:
-        raise RuntimeError("operator returned no tensor outputs")
-    return tuple(visible)
-
-
-def prepare_call_args(spec: dict, low_marker: torch.Tensor):
-    device = low_marker.device
-    b = int(spec.get("B", 1))
-    t = int(spec.get("T", 128))
-    d = int(spec.get("D", 64))
-    w = int(spec.get("W", 4))
-    dtype = _dtype(spec.get("dtype", "bf16"))
-    x = _normal((b, t, d), dtype, device, _seed(spec, 1), scale=0.08)
-    y = _normal((b, t, d), dtype, device, _seed(spec, 2), scale=0.08)
-    weight = _normal((w, d), dtype, device, _seed(spec, 3), scale=0.08)
-    dy = _normal((b, t, d), dtype, device, _seed(spec, 4), scale=0.08)
-    initial_state = _normal((b, w, d), dtype, device, _seed(spec, 5), scale=0.08)
-    dht = _normal((b, w, d), dtype, device, _seed(spec, 6), scale=0.08)
-    return x, y, weight, dy, initial_state, dht, [0, t], int(spec.get("activation", 0)), str(spec.get("layout", "BSND"))
-
-
-def reference_outputs(spec: dict, low_marker: torch.Tensor) -> tuple[torch.Tensor, ...]:
-    device = low_marker.device
-    prepared = prepare_call_args(spec, low_marker)
-    x, _y, weight, _dy, initial_state, *_ = prepared
-    return (
-        torch.zeros_like(x),
-        torch.zeros_like(weight),
-        torch.zeros((weight.shape[1],), device=device, dtype=weight.dtype),
-        torch.zeros_like(initial_state),
-    )
-
-
-def run_npu(public_api: str, spec: dict, low_marker: torch.Tensor):
-    from fla_npu.ops import ascendc
-
-    args = prepare_call_args(spec, low_marker)
-    op = getattr(ascendc, public_api)
-    return op(*args[:6], query_start_loc=args[6], activation=args[7], input_layout=args[8])
-
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from atk.configs.dataset_config import InputDataset
 from atk.configs.results_config import TaskResult
 from atk.tasks.api_execute import register
 from atk.tasks.api_execute.base_api import BaseApi
 
+from _ascendc_common_executor import (
+    _RCP_LN2,
+    _calc_dtype,
+    _case_spec,
+    _chunks,
+    _finite_tuple,
+    _gate,
+    _int_tensor,
+    _kda_gate,
+    _marker_device,
+    _num_chunks,
+    _orig_dtype,
+    _rand,
+    _randn,
+    _zeros,
+)
+
+
+OP_NAME = "causal_conv1d_bwd"
+
+
+def build_inputs(spec: dict[str, Any], device: torch.device, high_precision: bool = False) -> dict[str, Any]:
+    dtype_name = str(spec.get("dtype", "bf16")).lower()
+    calc_dtype = _calc_dtype(dtype_name, high_precision)
+    seed = int(spec.get("seed", 20260817))
+    B, T, D, W = (int(spec[x]) for x in ("B", "T", "D", "W"))
+    return {
+        "x": _randn((B, T, D), dtype_name, calc_dtype, device, seed + 1),
+        "weight": _randn((W, D), dtype_name, calc_dtype, device, seed + 2),
+        "dy": _randn((B, T, D), dtype_name, calc_dtype, device, seed + 3),
+    }
+
+
+def _causal_conv1d_ref(x, weight, bias):
+    calc = torch.float64 if x.dtype == torch.float64 else torch.float32
+    y = F.conv1d(
+        x.to(calc).permute(0, 2, 1).contiguous(),
+        weight.to(calc).t().unsqueeze(1).contiguous(),
+        bias=bias.to(calc) if bias is not None else None,
+        padding=weight.shape[0] - 1,
+        groups=x.shape[-1],
+    )
+    return y[..., : x.shape[1]].permute(0, 2, 1).contiguous().to(x.dtype)
+
+
+def _causal_conv1d_bwd_ref(inputs):
+    x = inputs["x"].detach().clone().to(torch.float64 if inputs["x"].dtype == torch.float64 else torch.float32).requires_grad_(True)
+    weight = inputs["weight"].detach().clone().to(x.dtype).requires_grad_(True)
+    _causal_conv1d_ref(x, weight, None).backward(inputs["dy"].to(x.dtype))
+    return x.grad.to(inputs["x"].dtype), weight.grad.to(inputs["weight"].dtype), inputs["dy"].sum(dim=(0, 1)).to(inputs["dy"].dtype)
+
+
+def run_cpu(spec: dict[str, Any], high_precision: bool = False):
+    """运行 CPU 同精度或 fp64 高精度标杆。"""
+    inputs = build_inputs(spec, torch.device("cpu"), high_precision=high_precision)
+    return _causal_conv1d_bwd_ref(inputs)
+
+
+def run_npu(spec: dict[str, Any], input_data: InputDataset):
+    """运行 NPU DUT。"""
+    inputs = build_inputs(spec, _marker_device(input_data), high_precision=False)
+    from fla_npu.ops import ascendc
+
+    return ascendc.causal_conv1d_bwd(inputs["x"], None, inputs["weight"], inputs["dy"], initial_state=None, dht=None, activation=0, input_layout="BSND")
+
 
 @register("executor_causal_conv1d_bwd")
 class FunctionApi(BaseApi):
-    op_name = "causal_conv1d_bwd"
-    public_api = "causal_conv1d_bwd"
+    """ATK 执行入口。"""
 
     def __init__(self, task_result: TaskResult):
-        super().__init__(task_result)
-        self.spec = None
+        super(FunctionApi, self).__init__(task_result)
         self.is_benchmark_task = bool(task_result.is_benchmark_task)
-
-    def init_by_input_data(self, input_data: InputDataset):
-        self.spec = json.loads(str(input_data.kwargs["case_spec"]))
+        self.high_precision = self.device == "cpu" and self.is_benchmark_task
 
     def __call__(self, input_data: InputDataset, with_output: bool = False):
-        del with_output
-        if getattr(self, "spec", None) is None:
-            self.init_by_input_data(input_data)
-        low_marker = input_data.kwargs["low_precision_marker"]
-        if self.device == "npu":
-            outputs = run_npu(self.public_api, self.spec, low_marker)
+        spec = _case_spec(input_data, OP_NAME)
+        if self.device in {"npu", "pyaclnn"}:
+            outputs = run_npu(spec, input_data)
+        elif self.device == "cpu":
+            outputs = run_cpu(spec, self.high_precision)
         else:
-            outputs = reference_outputs(self.spec, low_marker)
+            raise RuntimeError(f"{OP_NAME} 仅支持 NPU DUT 与 CPU 标杆节点，当前设备：{self.device!r}")
         return _finite_tuple(outputs)
-
-    def export_custom_data(self, input_data: InputDataset):
-        del input_data
-        return {
-            "case_key": str(self.spec.get("case_key", "")),
-            "soc": str(self.spec.get("soc", "")),
-            "route": str(self.spec.get("route", "")),
-            "seed": int(self.spec.get("seed", 0)),
-        }

@@ -1,4 +1,4 @@
-"""chunk_kda_bwd_intra 的 ATK 泛化用例生成器。"""
+"""prepare_wy_repr_bwd 的 ATK 泛化用例生成器。"""
 
 from __future__ import annotations
 
@@ -16,29 +16,29 @@ except ModuleNotFoundError as exc:
     GENERATOR_REGISTRY = None
     CaseConfig = None
 
-OP_NAME = "chunk_kda_bwd_intra"
+OP_NAME = "prepare_wy_repr_bwd"
 PROFILES = [
   {
-    "name": "bf16_beta_bf16",
+    "name": "bf16_small",
     "dtype": "bf16",
-    "beta_dtype": "bf16",
     "B": 1,
+    "HK": 1,
+    "HV": 1,
     "T": 16,
-    "H": 1,
     "K": 128,
-    "chunk_size": 64,
-    "layout": "BSND"
+    "V": 128,
+    "chunk_size": 64
   },
   {
-    "name": "bf16_beta_fp32",
-    "dtype": "bf16",
-    "beta_dtype": "fp32",
+    "name": "fp16_small",
+    "dtype": "fp16",
     "B": 1,
+    "HK": 1,
+    "HV": 1,
     "T": 16,
-    "H": 1,
     "K": 128,
-    "chunk_size": 64,
-    "layout": "BSND"
+    "V": 128,
+    "chunk_size": 64
   }
 ]
 

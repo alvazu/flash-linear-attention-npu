@@ -13,7 +13,7 @@ show_usage() {
   -op=chunk_kda_fwd              ATK 算子目录名
   -npu_device_id=6               传给 ATK node --devices 的 NPU 卡号
   -soc=ascend910b                可选：ascend910b/A2、ascend910_93/A3、ascend950/A5
-  -scope=all                     可选：all、accuracy、performance、determinism、mssanitizer
+  -scope=all                     可选：all、accuracy、performance、determinism、mssanitizer、gen_cases
 
 常用环境变量：
   ATK_ENV                        ATK 虚拟环境目录，设置后 source "$ATK_ENV/bin/activate"
@@ -29,9 +29,13 @@ show_usage() {
   MSS_START/MSS_END              mssanitizer case 范围
   MSS_TOOL                       mssanitizer 工具，默认 memcheck
   MSS_LOG_PATH                   ATK -msl 日志路径，默认使用脚本内置绝对路径
+  GEN_CASES_DTYPE_NUMBERS        生成用例时传给 atk case -dt，默认 100；双 dtype 算子生成 200 条
+  GEN_CASES_EXTRA_NUMBERS        生成用例时传给 atk case -en，默认 0
+  GEN_CASES_SEED                 生成用例随机种子，默认 20260813
 
 示例：
   bash tests/atk/run_test_cpu.sh -op=chunk_kda_fwd -npu_device_id=6
+  bash tests/atk/run_test_cpu.sh -op=chunk_bwd_dqkwg -scope=gen_cases
   CASE_START=0 CASE_END=1 bash tests/atk/run_test_cpu.sh -op=chunk_bwd_dqkwg -npu_device_id=6
 EOF
 }
@@ -59,6 +63,10 @@ source_env_file() {
 
 should_run() {
   local stage="$1"
+  if [[ "$stage" == "gen_cases" ]]; then
+    [[ "$RUN_SCOPE" == "gen_cases" ]]
+    return
+  fi
   [[ "$RUN_SCOPE" == "all" || "$RUN_SCOPE" == "$stage" ]]
 }
 
@@ -72,6 +80,9 @@ CASE_START="${CASE_START:-0}"
 CASE_END="${CASE_END:-1}"
 MSS_TOOL="${MSS_TOOL:-memcheck}"
 MSS_LOG_PATH="${MSS_LOG_PATH:-/home/huangjunzhe/gdn/github/alvazu-atk/flash-linear-attention-npu/fla/ops/ascendc/gdn/chunk_gdn_bwd/chunk_bwd_dqkwg/tests/ATK/log.txt}"
+GEN_CASES_DTYPE_NUMBERS="${GEN_CASES_DTYPE_NUMBERS:-100}"
+GEN_CASES_EXTRA_NUMBERS="${GEN_CASES_EXTRA_NUMBERS:-0}"
+GEN_CASES_SEED="${GEN_CASES_SEED:-20260813}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -136,10 +147,12 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -n "$OP" ]] || die "必须传入 -op=<算子名>"
-[[ -n "$NPU_DEVICE_ID" ]] || die "必须传入 -npu_device_id=<NPU卡号>"
+if [[ "$RUN_SCOPE" != "gen_cases" ]]; then
+  [[ -n "$NPU_DEVICE_ID" ]] || die "必须传入 -npu_device_id=<NPU卡号>"
+fi
 
 case "$RUN_SCOPE" in
-  all|accuracy|performance|determinism|mssanitizer) ;;
+  all|accuracy|performance|determinism|mssanitizer|gen_cases) ;;
   *) die "不支持的执行范围：${RUN_SCOPE}" ;;
 esac
 
@@ -152,12 +165,20 @@ case "$SOC" in
 esac
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 OP_DIR="${SCRIPT_DIR}/${OP}"
+CASE_FILE="${OP_DIR}/atk_${OP}.json"
+EXECUTOR_FILE="${OP_DIR}/executor_${OP}.py"
+YAML_FILE="${OP_DIR}/${OP}.yaml"
+GEN_FILE="${OP_DIR}/gen_${OP}.py"
 
 [[ -d "$OP_DIR" ]] || die "找不到 ATK 算子目录：${OP_DIR}"
-[[ -f "${OP_DIR}/atk_${OP}.json" ]] || die "找不到 ATK 用例文件：${OP_DIR}/atk_${OP}.json"
-[[ -f "${OP_DIR}/executor_${OP}.py" ]] || die "找不到 ATK 执行器：${OP_DIR}/executor_${OP}.py"
+if should_run gen_cases; then
+  [[ -f "$YAML_FILE" ]] || die "找不到 ATK YAML 文件：${YAML_FILE}"
+  [[ -f "$GEN_FILE" ]] || die "找不到 ATK 生成器：${GEN_FILE}"
+else
+  [[ -f "$CASE_FILE" ]] || die "找不到 ATK 用例文件：${CASE_FILE}"
+  [[ -f "$EXECUTOR_FILE" ]] || die "找不到 ATK 执行器：${EXECUTOR_FILE}"
+fi
 
 if [[ -n "${ATK_ENV:-}" ]]; then
   source_env_file "ATK虚拟环境" "${ATK_ENV}/bin/activate"
@@ -168,8 +189,6 @@ fi
 if [[ -n "${FLA_NPU_ENV:-${FLA_NPU_OPP_ENV:-}}" ]]; then
   source_env_file "fla_npu_transformer环境" "${FLA_NPU_ENV:-${FLA_NPU_OPP_ENV:-}}"
 fi
-
-export PYTHONPATH="${REPO_ROOT}/torch_custom/fla_npu:${REPO_ROOT}:${PYTHONPATH:-}"
 
 ATK_BIN="$(command -v atk || true)"
 [[ -n "$ATK_BIN" ]] || die "找不到 atk，请先安装并激活 ATK 环境"
@@ -189,10 +208,23 @@ mkdir -p "${ATK_OUTPUT_ROOT}/cpu_dual_reference" "${ATK_OUTPUT_ROOT}/perf"
 
 log_info "算子：${OP}"
 log_info "SOC：${SOC}"
-log_info "NPU 设备号：${NPU_DEVICE_ID}"
+if [[ "$RUN_SCOPE" != "gen_cases" ]]; then
+  log_info "NPU 设备号：${NPU_DEVICE_ID}"
+fi
 log_info "ATK 路径：${ATK_BIN}"
 log_info "输出根目录：${ATK_OUTPUT_ROOT}"
 "$ATK_BIN" --version || die "atk --version 执行失败"
+
+if should_run gen_cases; then
+  log_info "开始生成泛化用例：atk case -dt ${GEN_CASES_DTYPE_NUMBERS} -en ${GEN_CASES_EXTRA_NUMBERS}"
+  "$ATK_BIN" case \
+    -f "./${OP}.yaml" \
+    -p "./gen_${OP}.py" \
+    -dt "$GEN_CASES_DTYPE_NUMBERS" \
+    -en "$GEN_CASES_EXTRA_NUMBERS" \
+    -s "$GEN_CASES_SEED"
+  log_info "完成泛化用例生成：result/${OP}/json/all_${OP}.json"
+fi
 
 if should_run accuracy; then
   log_info "开始精度与 NaN 检测：accuracy + CPU高精度标杆 + CPU同精度标杆 + --gm_init_flag"

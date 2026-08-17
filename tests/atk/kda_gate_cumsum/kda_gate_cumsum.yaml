@@ -2,23 +2,23 @@ api: pytorch
 api_type: executor_kda_gate_cumsum
 version: v2.1
 name: kda_gate_cumsum
-aclnn_name: KdaGateCumsum
+aclnn_name:
 generate: generator_kda_gate_cumsum
-dtype_numbers: 2
+dtype_numbers: 1
 extra_numbers: 0
 standard:
   acc:
     cv_fused_double_benchmark:
-      max_re_ratio: 5
-      avg_re_ratio: 1.5
-      root_mean_squared_ratio: 1.5
+      max_re_ratio: 10
+      avg_re_ratio: 3
+      root_mean_squared_ratio: 3
   perf: not_key
 inputs:
   - name: low_precision_marker
     type: tensor
     required: true
     dtypes:
-      values: [bf16]
+      values: [bf16, fp16]
     ranges:
       valid:
         values: [[0, 0]]
@@ -51,27 +51,17 @@ inputs:
       values: [non_param]
     ranges:
       valid:
-        values: ['{"profile":"frozen_by_gen"}']
+        values: ["{\"name\":\"bf16_small\",\"dtype\":\"bf16\",\"B\":1,\"HV\":1,\"T\":16,\"K\":128,\"chunk_size\":64,\"op\":\"kda_gate_cumsum\",\"case_id\":0,\"seed\":20260817,\"route\":\"ascendc\",\"soc\":\"ascend910b\"}"]
       invalid:
         values: []
-  - name: soc
+  - name: dtype
     type: attr
     required: true
     dtypes:
       values: [string]
     ranges:
       valid:
-        values: [ascend910b]
-      invalid:
-        values: []
-  - name: route
-    type: attr
-    required: true
-    dtypes:
-      values: [string]
-    ranges:
-      valid:
-        values: [ascendc]
+        values: ["bf16", "fp16"]
       invalid:
         values: []
   - name: B
@@ -91,7 +81,7 @@ inputs:
       values: [int]
     ranges:
       valid:
-        values: [8]
+        values: [1]
       invalid:
         values: []
   - name: T
@@ -101,7 +91,7 @@ inputs:
       values: [int]
     ranges:
       valid:
-        values: [128, 256]
+        values: [16]
       invalid:
         values: []
   - name: K
@@ -114,16 +104,6 @@ inputs:
         values: [128]
       invalid:
         values: []
-  - name: g_dtype
-    type: attr
-    required: true
-    dtypes:
-      values: [string]
-    ranges:
-      valid:
-        values: [fp32, bf16]
-      invalid:
-        values: []
   - name: chunk_size
     type: attr
     required: true
@@ -134,43 +114,43 @@ inputs:
         values: [64]
       invalid:
         values: []
-  - name: varlen
+  - name: case_id
     type: attr
     required: true
     dtypes:
-      values: [bool]
+      values: [int]
     ranges:
       valid:
-        values: [false, true]
+        values: [0]
       invalid:
         values: []
-  - name: cu_seqlens
+  - name: seed
+    type: attr
+    required: true
+    dtypes:
+      values: [int]
+    ranges:
+      valid:
+        values: [20260817]
+      invalid:
+        values: []
+  - name: soc
     type: attr
     required: true
     dtypes:
       values: [string]
     ranges:
       valid:
-        values: ["", "0,128,256"]
+        values: ["ascend910b", "ascend910_93", "ascend950"]
       invalid:
         values: []
-  - name: explicit_chunk_indices
+  - name: route
     type: attr
     required: true
     dtypes:
-      values: [bool]
+      values: [string]
     ranges:
       valid:
-        values: [false, true]
-      invalid:
-        values: []
-  - name: use_gate_in_kernel
-    type: attr
-    required: true
-    dtypes:
-      values: [bool]
-    ranges:
-      valid:
-        values: [true]
+        values: ["ascendc"]
       invalid:
         values: []

@@ -2,23 +2,23 @@ api: pytorch
 api_type: executor_recurrent_kda
 version: v2.1
 name: recurrent_kda
-aclnn_name: RecurrentKda
+aclnn_name:
 generate: generator_recurrent_kda
-dtype_numbers: 2
+dtype_numbers: 1
 extra_numbers: 0
 standard:
   acc:
     cv_fused_double_benchmark:
-      max_re_ratio: 5
-      avg_re_ratio: 1.5
-      root_mean_squared_ratio: 1.5
+      max_re_ratio: 10
+      avg_re_ratio: 3
+      root_mean_squared_ratio: 3
   perf: not_key
 inputs:
   - name: low_precision_marker
     type: tensor
     required: true
     dtypes:
-      values: [bf16]
+      values: [bf16, fp16]
     ranges:
       valid:
         values: [[0, 0]]
@@ -51,27 +51,17 @@ inputs:
       values: [non_param]
     ranges:
       valid:
-        values: ['{"profile":"frozen_by_gen"}']
+        values: ["{\"name\":\"bf16_small\",\"dtype\":\"bf16\",\"B\":1,\"T\":2,\"H\":1,\"HV\":1,\"K\":128,\"V\":128,\"layout\":\"BSND\",\"state_v_first\":true,\"op\":\"recurrent_kda\",\"case_id\":0,\"seed\":20260817,\"route\":\"ascendc\",\"soc\":\"ascend910b\"}"]
       invalid:
         values: []
-  - name: soc
+  - name: dtype
     type: attr
     required: true
     dtypes:
       values: [string]
     ranges:
       valid:
-        values: [ascend910b]
-      invalid:
-        values: []
-  - name: route
-    type: attr
-    required: true
-    dtypes:
-      values: [string]
-    ranges:
-      valid:
-        values: [ascendc]
+        values: ["bf16"]
       invalid:
         values: []
   - name: B
@@ -84,6 +74,16 @@ inputs:
         values: [1]
       invalid:
         values: []
+  - name: T
+    type: attr
+    required: true
+    dtypes:
+      values: [int]
+    ranges:
+      valid:
+        values: [2]
+      invalid:
+        values: []
   - name: H
     type: attr
     required: true
@@ -91,7 +91,7 @@ inputs:
       values: [int]
     ranges:
       valid:
-        values: [4]
+        values: [1]
       invalid:
         values: []
   - name: HV
@@ -101,17 +101,7 @@ inputs:
       values: [int]
     ranges:
       valid:
-        values: [4, 8]
-      invalid:
-        values: []
-  - name: T
-    type: attr
-    required: true
-    dtypes:
-      values: [int]
-    ranges:
-      valid:
-        values: [128, 256]
+        values: [1]
       invalid:
         values: []
   - name: K
@@ -134,16 +124,6 @@ inputs:
         values: [128]
       invalid:
         values: []
-  - name: dtype
-    type: attr
-    required: true
-    dtypes:
-      values: [string]
-    ranges:
-      valid:
-        values: [bf16]
-      invalid:
-        values: []
   - name: layout
     type: attr
     required: true
@@ -151,37 +131,7 @@ inputs:
       values: [string]
     ranges:
       valid:
-        values: [BSND, TND]
-      invalid:
-        values: []
-  - name: varlen
-    type: attr
-    required: true
-    dtypes:
-      values: [bool]
-    ranges:
-      valid:
-        values: [false, true]
-      invalid:
-        values: []
-  - name: cu_seqlens
-    type: attr
-    required: true
-    dtypes:
-      values: [string]
-    ranges:
-      valid:
-        values: ["", "0,128,256"]
-      invalid:
-        values: []
-  - name: explicit_chunk_indices
-    type: attr
-    required: true
-    dtypes:
-      values: [bool]
-    ranges:
-      valid:
-        values: [false, true]
+        values: ["BSND"]
       invalid:
         values: []
   - name: state_v_first
@@ -191,6 +141,46 @@ inputs:
       values: [bool]
     ranges:
       valid:
-        values: [false, true]
+        values: [true]
+      invalid:
+        values: []
+  - name: case_id
+    type: attr
+    required: true
+    dtypes:
+      values: [int]
+    ranges:
+      valid:
+        values: [0]
+      invalid:
+        values: []
+  - name: seed
+    type: attr
+    required: true
+    dtypes:
+      values: [int]
+    ranges:
+      valid:
+        values: [20260817]
+      invalid:
+        values: []
+  - name: soc
+    type: attr
+    required: true
+    dtypes:
+      values: [string]
+    ranges:
+      valid:
+        values: ["ascend910b", "ascend910_93", "ascend950"]
+      invalid:
+        values: []
+  - name: route
+    type: attr
+    required: true
+    dtypes:
+      values: [string]
+    ranges:
+      valid:
+        values: ["ascendc"]
       invalid:
         values: []

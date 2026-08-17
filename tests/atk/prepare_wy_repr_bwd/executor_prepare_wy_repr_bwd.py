@@ -1,4 +1,4 @@
-"""chunk_fwd_o 的 ATK executor。
+"""prepare_wy_repr_bwd 的 ATK executor。
 
 输入生成、CPU 标杆、run_cpu、run_npu 和 FunctionApi 都放在本算子目录中。
 """
@@ -38,7 +38,7 @@ from _ascendc_common_executor import (
 )
 
 
-OP_NAME = "chunk_fwd_o"
+OP_NAME = "prepare_wy_repr_bwd"
 
 
 def build_inputs(spec: dict[str, Any], device: torch.device, high_precision: bool = False) -> dict[str, Any]:
@@ -47,44 +47,58 @@ def build_inputs(spec: dict[str, Any], device: torch.device, high_precision: boo
     seed = int(spec.get("seed", 20260817))
     B, HK, HV, T, K, V = (int(spec[x]) for x in ("B", "HK", "HV", "T", "K", "V"))
     chunk_size = int(spec["chunk_size"])
-    return {
-        "q": _randn((B, HK, T, K), dtype_name, calc_dtype, device, seed + 1),
-        "k": _randn((B, HK, T, K), dtype_name, calc_dtype, device, seed + 2),
-        "v": _randn((B, HV, T, V), dtype_name, calc_dtype, device, seed + 3),
-        "g": _gate((B, HV, T), torch.float64 if high_precision else torch.float32, device, seed + 4),
-        "h": _randn((B, HV, _num_chunks(T, chunk_size), K, V), dtype_name, calc_dtype, device, seed + 6),
+    inputs = {
+        "k": _randn((B, HK, T, K), dtype_name, calc_dtype, device, seed + 1),
+        "v": _randn((B, HV, T, V), dtype_name, calc_dtype, device, seed + 2),
+        "beta": _rand((B, HV, T), "fp32", torch.float64 if high_precision else torch.float32, device, seed + 3, 0.1, 0.9),
+        "A": _randn((B, HV, T, chunk_size), dtype_name, calc_dtype, device, seed + 4),
+        "g": _gate((B, HV, T), torch.float64 if high_precision else torch.float32, device, seed + 5),
         "chunk_size": chunk_size,
-        "scale": float(spec.get("scale", 1.0 / math.sqrt(K))),
     }
+    if OP_NAME != "recompute_w_u_fwd":
+        inputs["dw"] = _randn((B, HV, T, K), dtype_name, calc_dtype, device, seed + 6)
+        inputs["du"] = _randn((B, HV, T, V), dtype_name, calc_dtype, device, seed + 7)
+    if OP_NAME == "prepare_wy_repr_bwd_full":
+        inputs["dA"] = _zeros((B, HV, T, chunk_size), dtype_name, calc_dtype, device)
+    return inputs
 
 
-def _chunk_fwd_o_ref(inputs):
-    q, k, v, h, g = inputs["q"], inputs["k"], inputs["v"], inputs["h"], inputs["g"]
-    B, HK, T, _ = q.shape
+def _prepare_wy_common_ref(inputs):
+    k, v, beta, A, g = inputs["k"], inputs["v"], inputs["beta"], inputs["A"], inputs["g"]
+    dw, du = inputs["dw"], inputs["du"]
+    B, HK, T, K = k.shape
     HV, V = v.shape[1], v.shape[3]
     chunk_size = int(inputs["chunk_size"])
-    calc = torch.float64 if q.dtype == torch.float64 else torch.float32
-    out = torch.zeros((B, HV, T, V), dtype=calc, device=q.device)
+    calc = torch.float64 if k.dtype == torch.float64 else torch.float32
+    dk = torch.zeros((B, HK, T, K), dtype=calc, device=k.device)
+    dv = torch.zeros((B, HV, T, V), dtype=calc, device=k.device)
+    dbeta = torch.zeros((B, HV, T), dtype=calc, device=k.device)
+    dg = torch.zeros((B, HV, T), dtype=calc, device=k.device)
     group = max(HV // HK, 1)
     for b in range(B):
         for hv in range(HV):
             hk = hv // group
-            for chunk_id, (start, end) in enumerate(_chunks(T, chunk_size)):
-                q_chunk = q[b, hk, start:end].to(calc)
+            for start, end in _chunks(T, chunk_size):
+                length = end - start
+                a = A[b, hv, start:end, :length].to(calc)
                 k_chunk = k[b, hk, start:end].to(calc)
                 v_chunk = v[b, hv, start:end].to(calc)
+                beta_chunk = beta[b, hv, start:end].to(calc)
                 g_chunk = g[b, hv, start:end].to(calc)
-                local = torch.matmul(q_chunk, k_chunk.t()) * float(inputs["scale"])
-                gate = torch.exp(g_chunk[:, None] - g_chunk[None, :])
-                mask = torch.tril(torch.ones_like(local))
-                out[b, hv, start:end] = torch.matmul(local * gate * mask, v_chunk) + torch.matmul(q_chunk * float(inputs["scale"]), h[b, hv, chunk_id].to(calc))
-    return out.to(v.dtype)
+                tmp_w = torch.matmul(a.t(), dw[b, hv, start:end].to(calc))
+                tmp_u = torch.matmul(a.t(), du[b, hv, start:end].to(calc))
+                exp_g = torch.exp(g_chunk).unsqueeze(-1)
+                dk[b, hk, start:end] += tmp_w * beta_chunk.unsqueeze(-1) * exp_g
+                dv[b, hv, start:end] = tmp_u * beta_chunk.unsqueeze(-1)
+                dbeta[b, hv, start:end] += (tmp_w * k_chunk * exp_g).sum(-1) + (tmp_u * v_chunk).sum(-1)
+                dg[b, hv, start:end] += (tmp_w * k_chunk * beta_chunk.unsqueeze(-1) * exp_g).sum(-1)
+    return dk.to(k.dtype), dv.to(v.dtype), dbeta.to(beta.dtype), dg.to(g.dtype)
 
 
 def run_cpu(spec: dict[str, Any], high_precision: bool = False):
     """运行 CPU 同精度或 fp64 高精度标杆。"""
     inputs = build_inputs(spec, torch.device("cpu"), high_precision=high_precision)
-    return _chunk_fwd_o_ref(inputs)
+    return _prepare_wy_common_ref(inputs)
 
 
 def run_npu(spec: dict[str, Any], input_data: InputDataset):
@@ -92,10 +106,10 @@ def run_npu(spec: dict[str, Any], input_data: InputDataset):
     inputs = build_inputs(spec, _marker_device(input_data), high_precision=False)
     from fla_npu.ops import ascendc
 
-    return ascendc.chunk_fwd_o(inputs["q"], inputs["k"], inputs["v"], inputs["h"], inputs["scale"], g=inputs["g"], g_gamma=None, cu_seqlens=None, chunk_indices=None, chunk_size=inputs["chunk_size"], transpose_state_layout=False)
+    return ascendc.prepare_wy_repr_bwd(inputs["k"], inputs["v"], inputs["beta"], inputs["A"], inputs["dw"], inputs["du"], inputs["g"], inputs["chunk_size"], cu_seqlens=None, chunk_indices=None)
 
 
-@register("executor_chunk_fwd_o")
+@register("executor_prepare_wy_repr_bwd")
 class FunctionApi(BaseApi):
     """ATK 执行入口。"""
 

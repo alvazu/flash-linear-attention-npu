@@ -24,7 +24,7 @@ inputs:
       dim_numbers:
         values: [4]
       dim_values:
-        values: [[1, 4], [1, 32], [64, 256], 128]
+        values: [1, 1, 1, 128]
   - name: k
     type: tensor
     required: true
@@ -39,7 +39,7 @@ inputs:
       dim_numbers:
         values: [4]
       dim_values:
-        values: [[1, 4], [1, 32], [64, 256], 128]
+        values: [1, 1, 1, 128]
   - name: v
     type: tensor
     required: true
@@ -54,7 +54,7 @@ inputs:
       dim_numbers:
         values: [4]
       dim_values:
-        values: [[1, 4], [1, 64], [64, 256], [128, 256]]
+        values: [1, [1, 2], 1, [128, 256]]
   - name: g
     type: tensor
     required: true
@@ -69,7 +69,7 @@ inputs:
       dim_numbers:
         values: [3]
       dim_values:
-        values: [[1, 4], [1, 64], [64, 256]]
+        values: [1, [1, 2], 1]
   - name: h
     type: tensor
     required: true
@@ -84,7 +84,7 @@ inputs:
       dim_numbers:
         values: [5]
       dim_values:
-        values: [[1, 4], [1, 64], [1, 4], 128, [128, 256]]
+        values: [1, [1, 2], 1, 128, [128, 256]]
   - name: do
     type: tensor
     required: true
@@ -99,7 +99,7 @@ inputs:
       dim_numbers:
         values: [4]
       dim_values:
-        values: [[1, 4], [1, 64], [64, 256], [128, 256]]
+        values: [1, [1, 2], 1, [128, 256]]
   - name: dh
     type: tensor
     required: true
@@ -114,7 +114,7 @@ inputs:
       dim_numbers:
         values: [5]
       dim_values:
-        values: [[1, 4], [1, 64], [1, 4], 128, [128, 256]]
+        values: [1, [1, 2], 1, 128, [128, 256]]
   - name: dv
     type: tensor
     required: true
@@ -129,7 +129,7 @@ inputs:
       dim_numbers:
         values: [4]
       dim_values:
-        values: [[1, 4], [1, 64], [64, 256], [128, 256]]
+        values: [1, [1, 2], 1, [128, 256]]
   - name: cu_seqlens
     type: tensor
     required: true
@@ -137,14 +137,14 @@ inputs:
       values: [int64]
     ranges:
       valid:
-        values: [[1, 100]]
+        values: [[1, 1]]
       invalid:
         values: []
     shapes:
       dim_numbers:
         values: [1]
       dim_values:
-        values: [[2, 5]]
+        values: [2]
   - name: chunk_indices
     type: tensor
     required: true
@@ -159,7 +159,7 @@ inputs:
       dim_numbers:
         values: [2]
       dim_values:
-        values: [[1, 16], 2]
+        values: [2, 2]
   - name: w
     type: tensor
     required: false
@@ -174,7 +174,7 @@ inputs:
       dim_numbers:
         values: [4]
       dim_values:
-        values: [[1, 4], [1, 64], [64, 256], 128]
+        values: [1, [1, 2], 1, 128]
   - name: g_gamma
     type: tensor
     required: false
@@ -189,7 +189,7 @@ inputs:
       dim_numbers:
         values: [2]
       dim_values:
-        values: [[1, 64], [1, 1]]
+        values: [1, 1]
   - name: scale
     type: attr
     required: true

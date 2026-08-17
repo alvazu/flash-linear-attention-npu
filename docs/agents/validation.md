@@ -77,7 +77,6 @@ source <atk_venv>/bin/activate
 source <cann_install_path>/set_env.sh
 source <fla_npu_install_path>/vendors/fla_npu_transformer/bin/set_env.bash
 
-export PYTHONPATH="<repo_root>/torch_custom/fla_npu:<repo_root>:${PYTHONPATH:-}"
 export TORCH_EXTENSIONS_DIR=<writable_cache_dir>
 
 atk --version
@@ -88,6 +87,8 @@ npu-smi info -i <physical_npu_device>
 `-npu_device_id=<physical_npu_device>` 直接传给 ATK `node --devices`，例如
 `-npu_device_id=6` 对应 `--devices 6`。不要在外部额外设置
 `ASCEND_RT_VISIBLE_DEVICES` 造成设备号再次重映射。
+`run_test_cpu.sh` 不会导出 `PYTHONPATH`；如当前环境无法 import 仓内 `fla_npu` 或
+executor 依赖，请在调用脚本前自行设置。
 
 mssanitizer 阶段需要使用带 sanitizer 信息的 debug OPP 包。构建时确认 `opc` 命令包含
 `--op_debug_level=1 --op_debug_config=dump_cce,sanitizer`，执行前抽查目标对象中存在
@@ -123,7 +124,8 @@ bash tests/atk/run_test_cpu.sh \
 
 默认执行 `all`，顺序为 CPU 双标杆精度、性能、确定性和 mssanitizer。需要单独跑某一项时使用
 `-scope=accuracy`、`-scope=performance`、`-scope=determinism` 或
-`-scope=mssanitizer`。常用覆盖参数：
+`-scope=mssanitizer`。`gen_cases` 不属于 `all`，必须显式传入 `-scope=gen_cases`
+才会触发。常用覆盖参数：
 
 ```bash
 ATK_TIMEOUT=14400
@@ -140,6 +142,9 @@ MSS_END=1
 PERFORMANCE_TIMEOUT=2000
 MSS_TOOL=memcheck
 MSS_LOG_PATH=/home/huangjunzhe/gdn/github/alvazu-atk/flash-linear-attention-npu/fla/ops/ascendc/gdn/chunk_gdn_bwd/chunk_bwd_dqkwg/tests/ATK/log.txt
+GEN_CASES_DTYPE_NUMBERS=100
+GEN_CASES_EXTRA_NUMBERS=0
+GEN_CASES_SEED=20260813
 ```
 
 脚本默认自动识别 SOC。自动识别失败时按 A2 `ascend910b` 执行；A3 和 A5 可显式传入
@@ -154,6 +159,21 @@ ATK 文档 `ATK/docs/ATK使用指南/01 基础操作/任务执行.md` 说明 `--
 生成后的 JSON 顺序覆盖各阶段 `*_START/*_END`。
 
 ### 脚本覆盖的 ATK 动作
+
+泛化用例生成使用 ATK `case` 命令。ATK `case.py` 中 `-dt/--dtype_numbers`
+表示每个 dtype 生成多少条普通用例，`-en/--extra_numbers` 表示边界用例数量；
+`chunk_bwd_dqkwg` 的 q dtype 为 `bf16/fp16` 两类，因此默认 `-dt 100 -en 0`
+会生成 200 条泛化用例。该动作不在 `all` 中：
+
+```bash
+bash tests/atk/run_test_cpu.sh -op=<op> -scope=gen_cases
+```
+
+等价的 ATK 命令为：
+
+```bash
+atk case -f ./<op>.yaml -p ./gen_<op>.py -dt 100 -en 0 -s 20260813
+```
 
 精度与 NaN 检测使用 CPU 高精度真值和 CPU 同精度对照，并开启 `--gm_init_flag`：
 

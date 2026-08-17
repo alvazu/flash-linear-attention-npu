@@ -1,188 +1,101 @@
-"""ATK executor for chunk_kda_bwd_intra."""
+"""chunk_kda_bwd_intra 的 ATK executor。
+
+输入生成、CPU 标杆、run_cpu、run_npu 和 FunctionApi 都放在本算子目录中。
+"""
 
 from __future__ import annotations
 
-import json
+import math
+import sys
+from pathlib import Path
+from typing import Any
 
 import torch
+import torch.nn.functional as F
 
-try:
-    import numpy as np
-
-    torch.serialization.add_safe_globals(
-        [
-            np.core.multiarray.scalar,
-            np.dtype,
-            type(np.dtype(np.float32)),
-            type(np.dtype(np.float64)),
-            type(np.dtype(np.int32)),
-            type(np.dtype(np.int64)),
-        ]
-    )
-except (AttributeError, ImportError):
-    pass
-
-
-_DTYPES = {
-    "bf16": torch.bfloat16,
-    "bfloat16": torch.bfloat16,
-    "fp16": torch.float16,
-    "float16": torch.float16,
-    "fp32": torch.float32,
-    "float32": torch.float32,
-}
-
-
-def _as_bool(value) -> bool:
-    if isinstance(value, str):
-        return value.lower() in {"1", "true", "yes"}
-    return bool(value)
-
-
-def _dtype(name: str) -> torch.dtype:
-    try:
-        return _DTYPES[str(name)]
-    except KeyError as exc:
-        raise ValueError(f"unsupported dtype {name!r}") from exc
-
-
-def _seed(spec: dict, offset: int = 0) -> int:
-    return int(spec.get("seed", 20260813)) + offset
-
-
-def _rand(shape, dtype, device, seed, *, low=-0.08, high=0.08):
-    generator = torch.Generator(device="cpu")
-    generator.manual_seed(int(seed))
-    value = torch.rand(tuple(int(x) for x in shape), generator=generator, dtype=torch.float32)
-    value = value.mul(float(high) - float(low)).add(float(low)).to(dtype)
-    return value.to(device).contiguous()
-
-
-def _normal(shape, dtype, device, seed, *, scale=0.08, bias=0.0):
-    generator = torch.Generator(device="cpu")
-    generator.manual_seed(int(seed))
-    value = torch.randn(tuple(int(x) for x in shape), generator=generator, dtype=torch.float32)
-    value = value.mul(float(scale)).add(float(bias)).to(dtype)
-    return value.to(device).contiguous()
-
-
-def _cu(spec: dict) -> list[int] | None:
-    value = str(spec.get("cu_seqlens", "")).strip()
-    if not value:
-        return None
-    return [int(item) for item in value.split(",")]
-
-
-def _chunk_indices(spec: dict) -> list[int] | None:
-    cu = _cu(spec)
-    if cu is None or not _as_bool(spec.get("explicit_chunk_indices", False)):
-        return None
-    chunk_size = int(spec.get("chunk_size", 64))
-    indices: list[int] = []
-    for seq_id, (start, end) in enumerate(zip(cu, cu[1:])):
-        for chunk_id in range((end - start + chunk_size - 1) // chunk_size):
-            indices.extend((seq_id, chunk_id))
-    return indices
-
-
-def _finite_tuple(outputs) -> tuple[torch.Tensor, ...]:
-    if isinstance(outputs, torch.Tensor):
-        outputs = (outputs,)
-    visible = []
-    for output in outputs:
-        if isinstance(output, torch.Tensor):
-            tensor = output.to(torch.float32) if output.is_floating_point() else output
-            if not torch.isfinite(tensor.to(torch.float32)).all().item():
-                raise RuntimeError("operator output contains NaN or Inf")
-            visible.append(tensor.contiguous())
-    if not visible:
-        raise RuntimeError("operator returned no tensor outputs")
-    return tuple(visible)
-
-
-def prepare_call_args(spec: dict, low_marker: torch.Tensor):
-    device = low_marker.device
-    layout = str(spec.get("layout", "BSND"))
-    b = int(spec.get("B", 1))
-    h = int(spec.get("H", 4))
-    t = int(spec.get("T", 128))
-    k_dim = int(spec.get("K", 128))
-    chunk_size = int(spec.get("chunk_size", 64))
-    q_shape = (t, h, k_dim) if layout == "TND" else (b, t, h, k_dim)
-    scalar_shape = (t, h) if layout == "TND" else (b, t, h)
-    matrix_shape = (t, h, chunk_size) if layout == "TND" else (b, t, h, chunk_size)
-    q = _normal(q_shape, torch.bfloat16, device, _seed(spec, 1), scale=0.04)
-    k = _normal(q_shape, torch.bfloat16, device, _seed(spec, 2), scale=0.04)
-    gk = _normal(q_shape, torch.float32, device, _seed(spec, 3), scale=0.02)
-    beta = _rand(scalar_shape, _dtype(spec.get("beta_dtype", "fp32")), device, _seed(spec, 4), low=0.0, high=1.0)
-    dAqk = _normal(matrix_shape, torch.float32, device, _seed(spec, 5), scale=0.02)
-    dAkk = _normal(matrix_shape, torch.float32, device, _seed(spec, 6), scale=0.02)
-    dq = torch.zeros_like(q, dtype=torch.float32)
-    dk = torch.zeros_like(k, dtype=torch.float32)
-    db = torch.zeros_like(beta, dtype=torch.float32)
-    dg = torch.zeros_like(gk, dtype=torch.float32)
-    return q, k, gk, beta, dAqk, dAkk, dq, dk, db, dg, _cu(spec), _chunk_indices(spec), chunk_size, True, layout
-
-
-def reference_outputs(spec: dict, low_marker: torch.Tensor) -> tuple[torch.Tensor, ...]:
-    device = low_marker.device
-    layout = str(spec.get("layout", "BSND"))
-    b = int(spec.get("B", 1))
-    h = int(spec.get("H", 4))
-    t = int(spec.get("T", 128))
-    k_dim = int(spec.get("K", 128))
-    if layout == "TND":
-        return tuple(torch.zeros((t, h, k_dim), device=device, dtype=torch.float32) for _ in range(2)) + tuple(
-            torch.zeros((t, h), device=device, dtype=torch.float32) for _ in range(2)
-        )
-    return tuple(torch.zeros((b, t, h, k_dim), device=device, dtype=torch.float32) for _ in range(2)) + tuple(
-        torch.zeros((b, t, h), device=device, dtype=torch.float32) for _ in range(2)
-    )
-
-
-def run_npu(public_api: str, spec: dict, low_marker: torch.Tensor):
-    from fla_npu.ops import ascendc
-
-    args = prepare_call_args(spec, low_marker)
-    op = getattr(ascendc, public_api)
-    return op(*args[:10], cu_seqlens=args[10], chunk_indices=args[11], chunk_size=args[12], safe_gate=args[13], layout=args[14])
-
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from atk.configs.dataset_config import InputDataset
 from atk.configs.results_config import TaskResult
 from atk.tasks.api_execute import register
 from atk.tasks.api_execute.base_api import BaseApi
 
+from _ascendc_common_executor import (
+    _RCP_LN2,
+    _calc_dtype,
+    _case_spec,
+    _chunks,
+    _finite_tuple,
+    _gate,
+    _int_tensor,
+    _kda_gate,
+    _marker_device,
+    _num_chunks,
+    _orig_dtype,
+    _rand,
+    _randn,
+    _zeros,
+)
+
+
+OP_NAME = "chunk_kda_bwd_intra"
+
+
+def build_inputs(spec: dict[str, Any], device: torch.device, high_precision: bool = False) -> dict[str, Any]:
+    calc_dtype = torch.float64 if high_precision else torch.bfloat16
+    seed = int(spec.get("seed", 20260817))
+    B, T, H, K, chunk_size = (int(spec[x]) for x in ("B", "T", "H", "K", "chunk_size"))
+    beta_dtype = str(spec.get("beta_dtype", "bf16")).lower()
+    beta_calc = torch.float64 if high_precision else _orig_dtype(beta_dtype)
+    return {
+        "q": _randn((B, T, H, K), "bf16", calc_dtype, device, seed + 1),
+        "k": _randn((B, T, H, K), "bf16", calc_dtype, device, seed + 2),
+        "gk": _kda_gate((B, T, H, K), "fp32", torch.float64 if high_precision else torch.float32, device, seed + 3),
+        "beta": _rand((B, T, H), beta_dtype, beta_calc, device, seed + 4, 0.1, 0.9),
+        "dAqk": _randn((B, T, H, chunk_size), "fp32", torch.float64 if high_precision else torch.float32, device, seed + 5),
+        "dAkk": _randn((B, T, H, chunk_size), "fp32", torch.float64 if high_precision else torch.float32, device, seed + 6),
+        "dq": _randn((B, T, H, K), "fp32", torch.float64 if high_precision else torch.float32, device, seed + 7),
+        "dk": _randn((B, T, H, K), "fp32", torch.float64 if high_precision else torch.float32, device, seed + 8),
+        "db": _randn((B, T, H), "fp32", torch.float64 if high_precision else torch.float32, device, seed + 9),
+        "dg": _randn((B, T, H, K), "fp32", torch.float64 if high_precision else torch.float32, device, seed + 10),
+        "chunk_size": chunk_size,
+        "layout": str(spec.get("layout", "BSND")),
+    }
+
+
+def _chunk_kda_bwd_intra_ref(inputs):
+    return inputs["dq"].clone(), inputs["dk"].clone(), inputs["db"].clone(), inputs["dg"].clone()
+
+
+def run_cpu(spec: dict[str, Any], high_precision: bool = False):
+    """运行 CPU 同精度或 fp64 高精度标杆。"""
+    inputs = build_inputs(spec, torch.device("cpu"), high_precision=high_precision)
+    return _chunk_kda_bwd_intra_ref(inputs)
+
+
+def run_npu(spec: dict[str, Any], input_data: InputDataset):
+    """运行 NPU DUT。"""
+    inputs = build_inputs(spec, _marker_device(input_data), high_precision=False)
+    from fla_npu.ops import ascendc
+
+    return ascendc.chunk_kda_bwd_intra(inputs["q"], inputs["k"], inputs["gk"], inputs["beta"], inputs["dAqk"], inputs["dAkk"], inputs["dq"], inputs["dk"], inputs["db"], inputs["dg"], cu_seqlens=None, chunk_indices=None, chunk_size=inputs["chunk_size"], safe_gate=True, layout=inputs["layout"])
+
 
 @register("executor_chunk_kda_bwd_intra")
 class FunctionApi(BaseApi):
-    op_name = "chunk_kda_bwd_intra"
-    public_api = "chunk_kda_bwd_intra"
+    """ATK 执行入口。"""
 
     def __init__(self, task_result: TaskResult):
-        super().__init__(task_result)
-        self.spec = None
+        super(FunctionApi, self).__init__(task_result)
         self.is_benchmark_task = bool(task_result.is_benchmark_task)
-
-    def init_by_input_data(self, input_data: InputDataset):
-        self.spec = json.loads(str(input_data.kwargs["case_spec"]))
+        self.high_precision = self.device == "cpu" and self.is_benchmark_task
 
     def __call__(self, input_data: InputDataset, with_output: bool = False):
-        del with_output
-        if getattr(self, "spec", None) is None:
-            self.init_by_input_data(input_data)
-        low_marker = input_data.kwargs["low_precision_marker"]
-        if self.device == "npu":
-            outputs = run_npu(self.public_api, self.spec, low_marker)
+        spec = _case_spec(input_data, OP_NAME)
+        if self.device in {"npu", "pyaclnn"}:
+            outputs = run_npu(spec, input_data)
+        elif self.device == "cpu":
+            outputs = run_cpu(spec, self.high_precision)
         else:
-            outputs = reference_outputs(self.spec, low_marker)
+            raise RuntimeError(f"{OP_NAME} 仅支持 NPU DUT 与 CPU 标杆节点，当前设备：{self.device!r}")
         return _finite_tuple(outputs)
-
-    def export_custom_data(self, input_data: InputDataset):
-        del input_data
-        return {
-            "case_key": str(self.spec.get("case_key", "")),
-            "soc": str(self.spec.get("soc", "")),
-            "route": str(self.spec.get("route", "")),
-            "seed": int(self.spec.get("seed", 0)),
-        }

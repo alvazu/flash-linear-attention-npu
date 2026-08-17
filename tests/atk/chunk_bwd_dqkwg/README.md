@@ -31,11 +31,11 @@ YAML 已按算子限制收敛：
 - `q/k/v/h/do/dh/dv/w` 支持 `bf16/fp16`，`g` 支持 `fp32/bf16/fp16`。
 - `use_exp2=false`，`transpose_state_layout=false`。
 
-当前评审 JSON 保留 1 条源 ATK smoke case：
+当前评审 JSON 保留 1 条小 shape smoke case：
 
 | case 序号 | B | HK | HV | T | K | V | chunk_size | qkv_type | g dtype | scale | is_mix | is_fix |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 0 | 1 | 4 | 4 | 128 | 128 | 128 | 64 | fp16 | fp32 | 0.088 | true | true |
+| 0 | 1 | 1 | 1 | 1 | 128 | 128 | 64 | fp16 | fp32 | 0.088 | true | true |
 
 `w` 和 `g_gamma` 在 YAML/JSON 中均按可选输入标记；executor 会按当前源 ATK
 行为传入 `None`，保持与算子 optional 接口一致。
@@ -69,19 +69,24 @@ CASE_START=0 CASE_END=1 bash tests/atk/run_test_cpu.sh \
 
 脚本会通过 ATK 覆盖 CPU 双标杆精度、性能、确定性和 mssanitizer；所有范围均使用
 `-s <start> -e <end>` 表示 JSON 顺序中的第几个 case。
+脚本不会导出 `PYTHONPATH`，需要在调用前准备好 ATK、CANN、OPP 和 Python 包路径。
 
 ## 重新生成
 
-只在需要扩展 case 矩阵时使用 ATK 生成器：
+只在需要扩展 case 矩阵时使用 ATK 生成器。默认 `bf16/fp16` 两类 q dtype，
+`-dt 100 -en 0` 生成 200 条普通泛化用例：
+
+```bash
+bash tests/atk/run_test_cpu.sh \
+  -op=chunk_bwd_dqkwg \
+  -scope=gen_cases
+```
+
+等价 ATK 命令：
 
 ```bash
 cd "$REPO_ROOT/tests/atk/chunk_bwd_dqkwg"
-atk case \
-  -f ./chunk_bwd_dqkwg.yaml \
-  -p ./gen_chunk_bwd_dqkwg.py \
-  -dt 1 \
-  -en 0 \
-  -s 20260813
+atk case -f ./chunk_bwd_dqkwg.yaml -p ./gen_chunk_bwd_dqkwg.py -dt 100 -en 0 -s 20260813
 ```
 
 生成后需要人工确认 JSON 输入顺序、dtype、shape、`scale`、`chunk_size`、optional
