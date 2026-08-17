@@ -212,7 +212,6 @@ bash tests/atk/run_test_cpu.sh -op=causal_conv1d -npu_device_id=0
 - `chunk_fwd_o`
 - `chunk_gated_delta_rule_bwd_dhu`
 - `chunk_gated_delta_rule_fwd_h`
-- `chunk_kda_bwd_intra`
 - `chunk_kda_fwd`
 - `chunk_local_cumsum`
 - `chunk_scaled_dot_kkt`
