@@ -17,11 +17,13 @@ tests/atk/
 |   |-- atk_<op_name>.json
 |   |-- <op_name>.yaml
 |   |-- gen_<op_name>.py
+|   |-- scripts/
+|   |   `-- <本算子专用脚本>
 |   `-- executor_<op_name>.py
 ```
 
-少数算子目录会额外保存本算子专用的 CPU 标杆文件或分析脚本，例如
-`chunk_bwd_dqkwg/chunk_bwd_dqkwg_cpu.py`。这类文件只服务本算子，不放入 `common/`。
+每个算子目录保留 `scripts/`，用于本算子专属杂项脚本、分析脚本或 CPU 标杆。当前除
+`chunk_bwd_dqkwg/scripts/chunk_bwd_dqkwg_cpu.py` 外，其它算子的 `scripts/` 暂为空。
 
 ATK 运行产生的 `atk_output/`、`result/`、profiling、sanitizer 日志、XLSX、Python 缓存
 和临时输出不得提交。
@@ -34,12 +36,13 @@ ATK 运行产生的 `atk_output/`、`result/`、profiling、sanitizer 日志、X
 | `common/_ascendc_common_executor.py` | executor 共用的基础工具函数，例如 dtype 转换、case_spec 解析、确定性数据生成、有限值检查 |
 | `<op>/executor_<op>.py` | 本算子的输入构造、CPU 标杆、NPU DUT 调用和 ATK `FunctionApi` |
 | `<op>/gen_<op>.py` | 本算子的 ATK 泛化用例生成器 |
+| `<op>/scripts/` | 本算子专用的杂项脚本、分析脚本或辅助标杆，不放跨算子公共逻辑 |
 | `<op>/<op>.yaml` | ATK case 生成配置，shape 与 dtype 必须符合算子 README 和 tiling 限制 |
 | `<op>/atk_<op>.json` | 已评审的 ATK 执行用例 |
 | `<op>/README.md` | 本算子的输入限制、标杆来源、SOC 支持和执行示例 |
 
 `common/` 只放跨算子复用的基础函数。具体 CPU 标杆、`run_cpu`、`run_npu`、输入生成和
-`FunctionApi` 必须留在各自算子目录中，避免公共文件承载算子语义。
+`FunctionApi` 必须留在各自算子目录中；若需要额外脚本，放入本算子的 `scripts/`。
 
 ## 运行前准备
 
@@ -190,7 +193,7 @@ bash tests/atk/run_test_cpu.sh -op=<op_name> -scope=gen_cases
 
 新增算子工程时按以下顺序处理：
 
-1. 在 `tests/atk/<op_name>/` 下放置 `README.md`、`atk_<op_name>.json`、`<op_name>.yaml`、`gen_<op_name>.py`、`executor_<op_name>.py`。
+1. 在 `tests/atk/<op_name>/` 下放置 `README.md`、`atk_<op_name>.json`、`<op_name>.yaml`、`gen_<op_name>.py`、`executor_<op_name>.py` 和 `scripts/`。
 2. 在算子 README 中写清输入 shape、dtype、属性、可选输入、变长元数据和 tiling 限制。
 3. `executor_<op_name>.py` 中保留本算子的 `build_inputs`、CPU 标杆、`run_cpu`、`run_npu` 和 `FunctionApi`。
 4. 若需要公共基础函数，从 `tests/atk/common/_ascendc_common_executor.py` 引入；不要把算子专属逻辑放入 `common/`。

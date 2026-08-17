@@ -1,4 +1,7 @@
 # Copyright (c) Tianjin University, Ltd. 2025. All rights reserved.
+import sys
+from pathlib import Path
+
 import torch
 from typing import Optional, Tuple, List
 
@@ -7,6 +10,8 @@ from atk.configs.results_config import TaskResult
 from atk.tasks.api_execute import register
 from atk.tasks.api_execute.base_api import BaseApi
 
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "scripts"))
 
 from chunk_bwd_dqkwg_cpu import chunk_bwd_dqkwg_cpu
 
