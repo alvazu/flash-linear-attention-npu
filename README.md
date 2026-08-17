@@ -203,6 +203,27 @@ npu-smi info
 bash tests/atk/run_test_cpu.sh -op=causal_conv1d -npu_device_id=0
 ```
 
+当前 `-op` 可选值为：
+
+- `causal_conv1d`
+- `causal_conv1d_bwd`
+- `chunk_bwd_dqkwg`
+- `chunk_bwd_dv_local`
+- `chunk_fwd_o`
+- `chunk_gated_delta_rule_bwd_dhu`
+- `chunk_gated_delta_rule_fwd_h`
+- `chunk_kda_bwd_intra`
+- `chunk_kda_fwd`
+- `chunk_local_cumsum`
+- `chunk_scaled_dot_kkt`
+- `prepare_wy_repr_bwd`
+- `prepare_wy_repr_bwd_da`
+- `prepare_wy_repr_bwd_full`
+- `recompute_w_u_fwd`
+- `recurrent_gated_delta_rule`
+- `recurrent_kda`
+- `solve_tri`
+
 `run_test_cpu.sh` 支持以下 scope：
 
 ```sh
