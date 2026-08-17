@@ -50,6 +50,7 @@ def build_inputs(spec: dict[str, Any], device: torch.device, high_precision: boo
         "x": _randn((B, T, D), dtype_name, calc_dtype, device, seed + 1),
         "weight": _randn((W, D), dtype_name, calc_dtype, device, seed + 2),
         "bias": _randn((D,), dtype_name, calc_dtype, device, seed + 3),
+        "conv_states": _zeros((B, W - 1, D), dtype_name, calc_dtype, device),
     }
 
 
@@ -76,7 +77,7 @@ def run_npu(spec: dict[str, Any], input_data: InputDataset):
     inputs = build_inputs(spec, _marker_device(input_data), high_precision=False)
     from fla_npu.ops import ascendc
 
-    return ascendc.causal_conv1d(inputs["x"], inputs["weight"], bias=inputs["bias"], conv_states=None, activation_mode=0, run_mode=0, head_num=0)
+    return ascendc.causal_conv1d(inputs["x"], inputs["weight"], bias=inputs["bias"], conv_states=inputs["conv_states"], activation_mode=0, run_mode=0, head_num=0)
 
 
 @register("executor_causal_conv1d")

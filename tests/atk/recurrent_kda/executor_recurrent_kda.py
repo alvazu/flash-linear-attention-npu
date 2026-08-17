@@ -52,7 +52,7 @@ def build_inputs(spec: dict[str, Any], device: torch.device, high_precision: boo
         "g": _kda_gate((B, T, HV, K), "fp32", torch.float64 if high_precision else torch.float32, device, seed + 4),
         "beta": _rand((B, T, HV), "fp32", torch.float64 if high_precision else torch.float32, device, seed + 5, 0.1, 0.9),
         "initial_state": _zeros((B, HV, V, K), "fp32", torch.float64 if high_precision else torch.float32, device),
-        "cu_seqlens": _int_tensor([0, T], device, torch.int64),
+        "cu_seqlens": _int_tensor([i * T for i in range(B + 1)], device, torch.int64),
         "scale": float(spec.get("scale", 1.0 / math.sqrt(K))),
         "layout": str(spec.get("layout", "BSND")),
     }

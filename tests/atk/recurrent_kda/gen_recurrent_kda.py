@@ -21,14 +21,14 @@ PROFILES = [
   {
     "name": "bf16_small",
     "dtype": "bf16",
-    "B": 1,
+    "B": 2,
     "T": 2,
-    "H": 1,
-    "HV": 1,
+    "H": 2,
+    "HV": 4,
     "K": 128,
     "V": 128,
     "layout": "BSND",
-    "state_v_first": true
+    "state_v_first": True
   }
 ]
 

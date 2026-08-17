@@ -55,7 +55,7 @@
         "required": true,
         "dtype": "non_param",
         "shape": null,
-        "range_values": "{\"name\":\"bf16_small\",\"dtype\":\"bf16\",\"B\":1,\"T\":2,\"H\":1,\"HV\":1,\"K\":128,\"V\":128,\"layout\":\"BSND\",\"state_v_first\":true,\"op\":\"recurrent_kda\",\"case_id\":0,\"seed\":20260817,\"route\":\"ascendc\",\"soc\":\"ascend910b\"}",
+        "range_values": "{\"name\":\"bf16_small\",\"dtype\":\"bf16\",\"B\":2,\"T\":2,\"H\":2,\"HV\":4,\"K\":128,\"V\":128,\"layout\":\"BSND\",\"state_v_first\":true,\"op\":\"recurrent_kda\",\"case_id\":0,\"seed\":20260817,\"route\":\"ascendc\",\"soc\":\"ascend910b\"}",
         "backward": false
       },
       {
@@ -73,7 +73,7 @@
         "required": true,
         "dtype": "int",
         "shape": null,
-        "range_values": 1,
+        "range_values": 2,
         "backward": false
       },
       {
@@ -91,7 +91,7 @@
         "required": true,
         "dtype": "int",
         "shape": null,
-        "range_values": 1,
+        "range_values": 2,
         "backward": false
       },
       {
@@ -100,7 +100,7 @@
         "required": true,
         "dtype": "int",
         "shape": null,
-        "range_values": 1,
+        "range_values": 4,
         "backward": false
       },
       {
