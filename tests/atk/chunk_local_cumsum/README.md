@@ -4,9 +4,13 @@
 
 ## 输入约束
 
-g=[B,H,T]; B=1, H=1, T=16, chunk_size=8, head_first=True, output_dtype=float32.
-
-默认用例均使用定长小 shape，用于提升精度、性能、确定性和内存检测速度。
+- `g` 必须为 rank 3，shape 为 `[B,H,T]`，当前 AscendC kernel 仅支持 `head_first=true`。
+- `g/out` 支持 `FLOAT/FLOAT16/BFLOAT16`，kernel 内部按 FP32 累加后转换为输出 dtype。
+- `chunk_size` 必须为 2 的幂，并满足 host tiling 推导出的 `block_t >= chunk_size`。
+- `reverse` 控制 chunk 内累加方向；`scale` 为输出缩放系数。
+- 变长模式下 `cu_seqlens` 非空时，`chunk_indices_out` 必须非空且元素数为偶数，同时要求 `B=1`。
+- `output_dtype` 支持 `float32/float16/bfloat16` 及跟随输入 dtype 的别名。
+- 当前 ATK 用例遵循上述约束，并通过 `case_spec` 固定具体取值；扩展用例时应继续满足这些限制。
 
 ## 标杆来源
 
@@ -20,8 +24,8 @@ YAML 元信息覆盖 `ascend910b`、`ascend910_93` 和 `ascend950`，可配合�
 
 ## 默认用例
 
-- `bf16_small`: `{"name": "bf16_small", "dtype": "bf16", "B": 1, "H": 1, "T": 16, "chunk_size": 8, "reverse": false, "scale": 1.0, "op": "chunk_local_cumsum", "case_id": 0, "seed": 20260817, "route": "ascendc", "soc": "ascend910b"}`
-- `fp16_small`: `{"name": "fp16_small", "dtype": "fp16", "B": 1, "H": 1, "T": 16, "chunk_size": 8, "reverse": false, "scale": 1.0, "op": "chunk_local_cumsum", "case_id": 1, "seed": 20260818, "route": "ascendc", "soc": "ascend910b"}`
+- BF16 用例：`{"dtype": "bf16", "B": 1, "H": 1, "T": 16, "chunk_size": 8, "reverse": false, "scale": 1.0, "op": "chunk_local_cumsum", "case_id": 0, "seed": 20260817, "route": "ascendc", "soc": "ascend910b"}`
+- FP16 用例：`{"dtype": "fp16", "B": 1, "H": 1, "T": 16, "chunk_size": 8, "reverse": false, "scale": 1.0, "op": "chunk_local_cumsum", "case_id": 1, "seed": 20260818, "route": "ascendc", "soc": "ascend910b"}`
 
 ## 执行方式
 

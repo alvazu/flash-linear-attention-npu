@@ -4,9 +4,13 @@
 
 ## 输入约束
 
-x=[B,T,D], weight=[W,D], bias=[D]; B=1, T=8, D=16, W=4.
-
-默认用例均使用定长小 shape，用于提升精度、性能、确定性和内存检测速度。
+- `x` 支持 `[B,T,D]` 或 `[totalTokens,D]`；本工程用例使用 `[B,T,D]`。
+- `weight` 必须为 `[W,D]`，`W` 支持 `2/3/4`，`D` 需要是 `16` 的倍数。
+- `bias` 为可选 `[D]`；`convStates` 为必需输入，形状为 `[state_rows,state_len,D]`，`state_len >= W - 1`。
+- 未传 `cacheIndices` 时，`convStates.shape[0]` 需要覆盖 batch 数；`queryStartLoc`、`cacheIndices`、`initialStateMode`、`numAcceptedTokens` 均为 `INT64` 可选输入。
+- `x/weight/bias/convStates/y` 数据类型支持 `BFLOAT16/FLOAT16`，且输入数据类型需要保持一致。
+- `activationMode` 支持 `0/1`，`runMode` 支持 `0/1`；`headNum` 仅在前向模式中用于输出格式转换。
+- 当前 ATK 用例遵循上述约束，并通过 `case_spec` 固定具体取值；扩展用例时应继续满足这些限制。
 
 ## 标杆来源
 
@@ -20,8 +24,8 @@ YAML 元信息覆盖 `ascend910b`、`ascend910_93` 和 `ascend950`，可配合�
 
 ## 默认用例
 
-- `bf16_small`: `{"name": "bf16_small", "dtype": "bf16", "B": 1, "T": 8, "D": 16, "W": 4, "op": "causal_conv1d", "case_id": 0, "seed": 20260817, "route": "ascendc", "soc": "ascend910b"}`
-- `fp16_small`: `{"name": "fp16_small", "dtype": "fp16", "B": 1, "T": 8, "D": 16, "W": 4, "op": "causal_conv1d", "case_id": 1, "seed": 20260818, "route": "ascendc", "soc": "ascend910b"}`
+- BF16 用例：`{"dtype": "bf16", "B": 1, "T": 8, "D": 16, "W": 4, "op": "causal_conv1d", "case_id": 0, "seed": 20260817, "route": "ascendc", "soc": "ascend910b"}`
+- FP16 用例：`{"dtype": "fp16", "B": 1, "T": 8, "D": 16, "W": 4, "op": "causal_conv1d", "case_id": 1, "seed": 20260818, "route": "ascendc", "soc": "ascend910b"}`
 
 ## 执行方式
 

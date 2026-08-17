@@ -4,9 +4,13 @@
 
 ## 输入约束
 
-layout=BSND; q/k/gk/dq/dk/dg=[B,T,H,K], beta/db=[B,T,H], dAqk/dAkk=[B,T,H,64]; B=1, T=16, H=1, K=128, chunk_size=64.
-
-默认用例均使用定长小 shape，用于提升精度、性能、确定性和内存检测速度。
+- dense `BNSD` 语义下，`q/k/gk/dq/dk/dg` 为 `[B,H,T,K]`，`beta/db` 为 `[B,H,T]`，`dAqk/dAkk` 为 `[B,H,T,chunk_size]`。
+- 兼容 `BSND` 输入时，executor 在本目录内完成与算子约定一致的维度排列。
+- `q/k/gk/dq/dk/dg` 形状必须一致，`beta/db` 形状必须一致，`dAqk/dAkk` 形状必须一致。
+- `q/k` 仅支持 `BFLOAT16`；`beta` 支持 `BFLOAT16/FLOAT`；首版 kernel 要求 `safe_gate=true`。
+- `chunk_size` 固定为 `64`；dense 模式支持 `K=64/128/256`，varlen 模式支持 `K=128`。
+- varlen `TND` 模式需要 `cu_seqlens` 和 packed chunk metadata，且 `cu_seqlens` 元素数不超过 `65`。
+- 当前 ATK 用例遵循上述约束，并通过 `case_spec` 固定具体取值；扩展用例时应继续满足这些限制。
 
 ## 标杆来源
 

@@ -24,14 +24,17 @@ qkv_type`。
 
 YAML 已按算子限制收敛：
 
-- `q/k=[B,HK,T,K]`，`v/do/dv=[B,HV,T,V]`，`g=[B,HV,T]`。
-- `h/dh=[B,HV,num_chunks,K,V]`，`num_chunks=ceil(T/chunk_size)`。
+- `q/k=[B,HK,T,K]`，且二者 shape 必须一致；`v/do/dv=[B,HV,T,V]`。
+- `g=[B,HV,T]`，需要为非正且沿 `T` 维单调递减；`g` 支持 `fp32/bf16/fp16`。
+- `h/dh=[B,HV,num_chunks,K,V]`，`num_chunks=ceil(T/chunk_size)` 或由 `chunk_indices` 推导。
+- `q/k/v/h/do/dh/dv` 支持 `bf16/fp16`，输入的 `B/T` 维必须对齐。
 - `HV` 必须是 `HK` 的整数倍。
 - `K=128`，`V=128/256`，`chunk_size=64/128`。
-- `q/k/v/h/do/dh/dv/w` 支持 `bf16/fp16`，`g` 支持 `fp32/bf16/fp16`。
 - `use_exp2=false`，`transpose_state_layout=false`。
+- `w` 和 `g_gamma` 当前实现未启用，必须按可选输入传 `None`。
+- 变长模式下 `cu_seqlens` 与 `chunk_indices` 必须同时提供，`chunk_indices` 为 `[seq_id, chunk_id]` 扁平化数组，且 `B=1`。
 
-当前评审 JSON 保留 1 条小 shape smoke case：
+当前评审 JSON 保留 1 条评审验证 case：
 
 | case 序号 | B | HK | HV | T | K | V | chunk_size | qkv_type | g dtype | scale | is_mix | is_fix |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |

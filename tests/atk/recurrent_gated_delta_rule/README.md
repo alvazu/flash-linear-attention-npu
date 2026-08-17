@@ -4,9 +4,14 @@
 
 ## 输入约束
 
-query/key=[T,NK,Dk], value/out=[T,NV,Dv], state=[BlockNum,NV,Dv,Dk], actual_seq_lengths=[0,T]; B=1, T=2, NK=1, NV=1, Dk=128, Dv=128.
-
-默认用例均使用定长小 shape，用于提升精度、性能、确定性和内存检测速度。
+- `query/key` 必须为 `(T,Nk,Dk)`，`value/out` 必须为 `(T,Nv,Dv)`。
+- `beta` 必须为 `(T,Nv)`；`stateRef` 为原地输入输出，shape 为 `(BlockNum,Nv,Dv,Dk)`。
+- `actualSeqLengths` 必须为 `(B+1,)` 的 `INT32` 张量，首元素是不参与计算的无效长度，其余 `B` 个元素之和等于 `T`。
+- `ssmStateIndices` 必须为 `(T,)` 的 `INT32` 张量，取值范围为 `[0, BlockNum)`。
+- `query/key/value/beta/stateRef/out` 当前仅支持 `BFLOAT16`。
+- 每条序列有效 token 数需要 `<= 8`；`g` 如提供为 `(T,Nv)` FP32，`gk` 当前未支持，必须传 `None`。
+- `numAcceptedTokens` 如提供，shape 为 `(B,)`，每项不超过对应序列有效 token 数；`scale` 建议按 `1 / sqrt(Dk)` 设置。
+- 当前 ATK 用例遵循上述约束，并通过 `case_spec` 固定具体取值；扩展用例时应继续满足这些限制。
 
 ## 标杆来源
 
@@ -20,7 +25,7 @@ YAML 元信息覆盖 `ascend910b`、`ascend910_93` 和 `ascend950`，可配合�
 
 ## 默认用例
 
-- `bf16_small`: `{"name": "bf16_small", "dtype": "bf16", "B": 1, "T": 2, "HK": 1, "HV": 1, "K": 128, "V": 128, "block_num": 1, "op": "recurrent_gated_delta_rule", "case_id": 0, "seed": 20260817, "route": "ascendc", "soc": "ascend910b"}`
+- BF16 用例：`{"dtype": "bf16", "B": 1, "T": 2, "HK": 1, "HV": 1, "K": 128, "V": 128, "block_num": 1, "op": "recurrent_gated_delta_rule", "case_id": 0, "seed": 20260817, "route": "ascendc", "soc": "ascend910b"}`
 
 ## 执行方式
 

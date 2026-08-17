@@ -22,7 +22,7 @@ show_usage() {
   ATK_OUTPUT_ROOT                输出根目录，默认 ./atk_output
   ATK_TIMEOUT                    精度阶段超时，默认 14400
   PERFORMANCE_TIMEOUT            性能阶段超时，默认 2000
-  CASE_START/CASE_END            通用 case 顺序范围，默认 0/1，ATK 执行 [start, end)
+  CASE_START/CASE_END            通用 case 顺序范围；不设置时不传 -s/-e，ATK 执行全部用例
   ACCURACY_START/ACCURACY_END    精度与 NaN 检测 case 范围
   PERFORMANCE_START/END          性能 case 范围
   DETERMINISM_START/END          确定性 case 范围
@@ -70,14 +70,25 @@ should_run() {
   [[ "$RUN_SCOPE" == "all" || "$RUN_SCOPE" == "$stage" ]]
 }
 
+set_case_range_args() {
+  local label="$1"
+  local start="$2"
+  local end="$3"
+  CASE_RANGE_ARGS=()
+  if [[ -n "$start" || -n "$end" ]]; then
+    [[ -n "$start" && -n "$end" ]] || die "${label} 需要同时设置 start 和 end"
+    CASE_RANGE_ARGS=(-s "$start" -e "$end")
+  fi
+}
+
 OP=""
 NPU_DEVICE_ID="${NPU_DEVICE_ID:-}"
 SOC="${SOC:-auto}"
 RUN_SCOPE="${RUN_SCOPE:-all}"
 ATK_TIMEOUT="${ATK_TIMEOUT:-14400}"
 PERFORMANCE_TIMEOUT="${PERFORMANCE_TIMEOUT:-2000}"
-CASE_START="${CASE_START:-0}"
-CASE_END="${CASE_END:-1}"
+CASE_START="${CASE_START:-}"
+CASE_END="${CASE_END:-}"
 MSS_TOOL="${MSS_TOOL:-memcheck}"
 MSS_LOG_PATH="${MSS_LOG_PATH:-/home/huangjunzhe/gdn/github/alvazu-atk/flash-linear-attention-npu/fla/ops/ascendc/gdn/chunk_gdn_bwd/chunk_bwd_dqkwg/tests/ATK/log.txt}"
 GEN_CASES_DTYPE_NUMBERS="${GEN_CASES_DTYPE_NUMBERS:-100}"
@@ -228,6 +239,7 @@ fi
 
 if should_run accuracy; then
   log_info "开始精度与 NaN 检测：accuracy + CPU高精度标杆 + CPU同精度标杆 + --gm_init_flag"
+  set_case_range_args "精度与 NaN 检测 case 范围" "$ACCURACY_START" "$ACCURACY_END"
   "$ATK_BIN" node --name npu_dut --backend npu --devices "$NPU_DEVICE_ID" \
       --output_path "${ATK_OUTPUT_ROOT}/cpu_dual_reference" \
     node --name cpu_reference --backend cpu \
@@ -237,8 +249,7 @@ if should_run accuracy; then
       --task accuracy \
       --bm_device cpu \
       -p "./executor_${OP}.py" \
-      -s "$ACCURACY_START" \
-      -e "$ACCURACY_END" \
+      "${CASE_RANGE_ARGS[@]}" \
       --gm_init_flag \
       -sp \
       -mt 1 \
@@ -248,14 +259,14 @@ fi
 
 if should_run performance; then
   log_info "开始性能测试：performance_device"
+  set_case_range_args "性能测试 case 范围" "$PERFORMANCE_START" "$PERFORMANCE_END"
   "$ATK_BIN" node --name npu_dut --backend npu --devices "$NPU_DEVICE_ID" \
       --output_path "${ATK_OUTPUT_ROOT}/perf" \
     task \
       -c "atk_${OP}.json" \
       --task performance_device \
       -p "executor_${OP}.py" \
-      -s "$PERFORMANCE_START" \
-      -e "$PERFORMANCE_END" \
+      "${CASE_RANGE_ARGS[@]}" \
       --save_data profile \
       -sp \
       -to "$PERFORMANCE_TIMEOUT"
@@ -264,13 +275,13 @@ fi
 
 if should_run determinism; then
   log_info "开始确定性测试：accuracy_dc"
+  set_case_range_args "确定性测试 case 范围" "$DETERMINISM_START" "$DETERMINISM_END"
   "$ATK_BIN" node --name npu_dut --backend npu --devices "$NPU_DEVICE_ID" \
     task \
       -c "atk_${OP}.json" \
       -p "executor_${OP}.py" \
       --task accuracy_dc \
-      -s "$DETERMINISM_START" \
-      -e "$DETERMINISM_END"
+      "${CASE_RANGE_ARGS[@]}"
   log_info "完成确定性测试"
 fi
 
@@ -278,6 +289,7 @@ if should_run mssanitizer; then
   command -v mssanitizer >/dev/null 2>&1 || die "找不到 mssanitizer，请先加载支持 sanitizer 的 CANN/调试环境"
   log_info "开始内存检测：mssanitizer ${MSS_TOOL}"
   log_info "ATK mssanitizer 日志：${MSS_LOG_PATH}"
+  set_case_range_args "内存检测 case 范围" "$MSS_START" "$MSS_END"
   mssanitizer --tool="$MSS_TOOL" -- \
     "$ATK_BIN" node --name npu_dut --backend npu --devices "$NPU_DEVICE_ID" \
     task \
@@ -286,8 +298,7 @@ if should_run mssanitizer; then
       --task run \
       --mssanitizer \
       -msl "$MSS_LOG_PATH" \
-      -s "$MSS_START" \
-      -e "$MSS_END"
+      "${CASE_RANGE_ARGS[@]}"
   log_info "完成内存检测"
 fi
 

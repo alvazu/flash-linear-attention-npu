@@ -4,9 +4,13 @@
 
 ## 输入约束
 
-k=[B,HK,T,K], g/beta=[B,HV,T], A=[B,HK,T,chunk_size]; B=1, HK=1, HV=1, T=16, K=16, chunk_size=16.
-
-默认用例均使用定长小 shape，用于提升精度、性能、确定性和内存检测速度。
+- `k` 必须为 4D，shape 为 `[B,Hk,T,K]`，head-first 排布。
+- `g/beta` 必须为 3D，shape 为 `[B,Hv,T]`，并且 `B/T` 与 `k` 一致。
+- GVA 要求 `Hv % Hk == 0`；输出 `A` 的 head 维与 `k` 对齐，shape 为 `[B,Hk,T,chunk_size]`。
+- `k` 支持 `BFLOAT16/FLOAT16`；`g/beta/A` 按源码 README 使用 `FLOAT`。
+- `chunk_size` 支持 `16/32/64/128`；当前版本不支持 `gk` 分支。
+- `cu_seqlens` 和 `chunk_indices` 必须同时传入或同时省略；`chunk_indices` 以 `[seq_id, chunk_id]` 成对存放。
+- 当前 ATK 用例遵循上述约束，并通过 `case_spec` 固定具体取值；扩展用例时应继续满足这些限制。
 
 ## 标杆来源
 
@@ -20,8 +24,8 @@ YAML 元信息覆盖 `ascend910b`、`ascend910_93` 和 `ascend950`，可配合�
 
 ## 默认用例
 
-- `bf16_small`: `{"name": "bf16_small", "dtype": "bf16", "B": 1, "HK": 1, "HV": 1, "T": 16, "K": 16, "chunk_size": 16, "op": "chunk_scaled_dot_kkt", "case_id": 0, "seed": 20260817, "route": "ascendc", "soc": "ascend910b"}`
-- `fp16_small`: `{"name": "fp16_small", "dtype": "fp16", "B": 1, "HK": 1, "HV": 1, "T": 16, "K": 16, "chunk_size": 16, "op": "chunk_scaled_dot_kkt", "case_id": 1, "seed": 20260818, "route": "ascendc", "soc": "ascend910b"}`
+- BF16 用例：`{"dtype": "bf16", "B": 1, "HK": 1, "HV": 1, "T": 16, "K": 16, "chunk_size": 16, "op": "chunk_scaled_dot_kkt", "case_id": 0, "seed": 20260817, "route": "ascendc", "soc": "ascend910b"}`
+- FP16 用例：`{"dtype": "fp16", "B": 1, "HK": 1, "HV": 1, "T": 16, "K": 16, "chunk_size": 16, "op": "chunk_scaled_dot_kkt", "case_id": 1, "seed": 20260818, "route": "ascendc", "soc": "ascend910b"}`
 
 ## 执行方式
 

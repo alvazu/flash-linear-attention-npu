@@ -6,6 +6,19 @@ Triton 对照。所有地址、端口、设备号和安装路径均使用占位�
 
 通用版本、case 范围、精度标准和复检规则见 [`../README.md`](../README.md)。
 
+## 输入限制
+
+- `layout` 支持 `BSND/BNSD/TND/NTD`；`layout` 只描述输入，输出布局由接口固定约定。
+- `BSND` 下 `q/k=[B,T,H_k,K]`，`v=[B,T,H_v,V]`，`g=[B,T,H_v,K]`，`beta=[B,T,H_v]`。
+- `BNSD` 下 `q/k=[B,H_k,T,K]`，`v=[B,H_v,T,V]`，`g=[B,H_v,T,K]`，`beta=[B,H_v,T]`。
+- `TND/NTD` 使用打包 token，总长度由 `cu_seqlens` 描述；`cu_seqlens` 从 `0` 开始、以 `T` 结束且单调不减。
+- head 映射必须满足 `0 < H_k <= H_v <= 128` 且 `H_v % H_k == 0`。
+- `q/k/v` 支持 `BFLOAT16/FLOAT16`；`g` 支持 `FLOAT/BFLOAT16`；`beta` 支持 `FLOAT/BFLOAT16`。
+- `K/V` 为 `[16,256]` 内 `16` 的倍数，交付矩阵重点覆盖 `K=128`、`V=128/256`。
+- `chunk_size` 支持 `64/128`；rank-4 变长输入要求 `B=1`，逻辑序列数最多 `1024`。
+- `use_gate_in_kernel=true` 时必须提供 `A_log`，`dt_bias` 可选；`safe_gate=true` 时 `lower_bound` 取值范围为 `[-5,0)`。
+- `initial_state` 如提供，末两维由 `state_v_first` 解释为 `[K,V]` 或 `[V,K]`。
+
 ## 1. CPU 双标杆拓扑
 
 CPU 双标杆不依赖 GPU，也不需要单独启动 ATK server：
@@ -297,7 +310,7 @@ unset KDA_ATK_TRACE_SEED
 
 case 250 是 A5 `H=96, T=8192, chunk_size=64` 模型 case，GPU FP64 真值需要较多显存。
 烟测前应确认目标卡空闲；显存不足时不要换卡并发跑，也不要改输入范围，先释放该卡上的其他
-任务。只验证链路时可从 JSON 选择同属 A5 正向范围的小 shape case。
+任务。只验证链路时可从 JSON 选择同属 A5 正向范围的验证 case。
 
 同一 case/seed 的日志必须出现三种角色：
 

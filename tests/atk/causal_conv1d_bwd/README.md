@@ -4,9 +4,13 @@
 
 ## 输入约束
 
-x/dy=[B,T,D], weight=[W,D]; B=1, T=8, D=16, W=4, inputLayout=BSND.
-
-默认用例均使用定长小 shape，用于提升精度、性能、确定性和内存检测速度。
+- `x/dx` 在 `BSND/BSH/BNSD` 下为 `[B,T,D]`，在 `TND/NTD` 下为 `[totalTokens,D]`。
+- `y/dy` 的物理 shape 由 `inputLayout` 决定；`BSND/BSH/TND` 与逻辑 shape 一致，`BNSD/NTD` 使用 `[B,N,T,Dh]` 或 `[N,totalTokens,Dh]`，且 `D=N*Dh`。
+- `weight` 必须为 `[W,D]`；`initial_state/dht/dh0` 如提供，逻辑 shape 为 `[B,W,D]`。
+- `BSND/TND` 的逻辑特征维 `D` 必须为 `16` 的倍数；`BNSD/NTD` 的 `Dh` 必须为 `16` 的倍数。
+- `x/y/weight/dy/initial_state/dht` 数据类型需要一致，支持 `FLOAT/FLOAT16/BFLOAT16`；`activation=1/2` 时必须提供 `y`。
+- `TND/NTD` 必须提供 `queryStartLoc`，其首项为 `0`、末项为 `totalTokens`，且单调不减；固定 batch 模式要求 `T > 0`。
+- 当前 ATK 用例使用 `inputLayout=BSND`，并通过 `case_spec` 固定具体取值；扩展用例时应继续满足这些限制。
 
 ## 标杆来源
 
@@ -20,8 +24,8 @@ YAML 元信息覆盖 `ascend910b`、`ascend910_93` 和 `ascend950`，可配合�
 
 ## 默认用例
 
-- `bf16_small`: `{"name": "bf16_small", "dtype": "bf16", "B": 1, "T": 8, "D": 16, "W": 4, "op": "causal_conv1d_bwd", "case_id": 0, "seed": 20260817, "route": "ascendc", "soc": "ascend910b"}`
-- `fp16_small`: `{"name": "fp16_small", "dtype": "fp16", "B": 1, "T": 8, "D": 16, "W": 4, "op": "causal_conv1d_bwd", "case_id": 1, "seed": 20260818, "route": "ascendc", "soc": "ascend910b"}`
+- BF16 用例：`{"dtype": "bf16", "B": 1, "T": 8, "D": 16, "W": 4, "op": "causal_conv1d_bwd", "case_id": 0, "seed": 20260817, "route": "ascendc", "soc": "ascend910b"}`
+- FP16 用例：`{"dtype": "fp16", "B": 1, "T": 8, "D": 16, "W": 4, "op": "causal_conv1d_bwd", "case_id": 1, "seed": 20260818, "route": "ascendc", "soc": "ascend910b"}`
 
 ## 执行方式
 

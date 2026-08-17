@@ -4,9 +4,14 @@
 
 ## 输入约束
 
-k=[B,HK,T,K], v=[B,HV,T,V], beta/g=[B,HV,T], A=[B,HV,T,chunk_size], w=[B,HV,T,K], u=[B,HV,T,V]; K=128, V=128, chunk_size=64.
-
-默认用例均使用定长小 shape，用于提升精度、性能、确定性和内存检测速度。
+- `k` 必须为 `[B,HK,T,K]`，`v/u` 必须为 `[B,HV,T,V]`。
+- `beta/g` 必须为 `[B,HV,T]`；`A` 必须为 `[B,HV,T,chunk_size]`。
+- `w` 输出为 `[B,HV,T,K]`，不是 `empty_like(k)` 的 `[B,HK,T,K]`。
+- `k` 与 `v` 的 `B/T` 必须一致；`beta/g/A` 的 head 维与 `v` 的 `HV` 对齐；`HV % HK == 0`。
+- `k/v/A/w/u` 支持 `BFLOAT16/FLOAT16`；`beta/g` 支持 `FLOAT/BFLOAT16/FLOAT16`。
+- `g` 当前 ACLNN 封装要求必传；`gk` 当前未启用，必须传 `None`。
+- `K` 固定为 `128`，`V` 支持 `128/256`，`chunk_size` 仅支持 `64/128`；变长模式要求 `B=1` 且 `cu_seqlens/chunk_indices` 成对传入。
+- 当前 ATK 用例遵循上述约束，并通过 `case_spec` 固定具体取值；扩展用例时应继续满足这些限制。
 
 ## 标杆来源
 
@@ -20,8 +25,8 @@ YAML 元信息覆盖 `ascend910b`、`ascend910_93` 和 `ascend950`，可配合�
 
 ## 默认用例
 
-- `bf16_small`: `{"name": "bf16_small", "dtype": "bf16", "B": 1, "HK": 1, "HV": 1, "T": 16, "K": 128, "V": 128, "chunk_size": 64, "op": "recompute_w_u_fwd", "case_id": 0, "seed": 20260817, "route": "ascendc", "soc": "ascend910b"}`
-- `fp16_small`: `{"name": "fp16_small", "dtype": "fp16", "B": 1, "HK": 1, "HV": 1, "T": 16, "K": 128, "V": 128, "chunk_size": 64, "op": "recompute_w_u_fwd", "case_id": 1, "seed": 20260818, "route": "ascendc", "soc": "ascend910b"}`
+- BF16 用例：`{"dtype": "bf16", "B": 1, "HK": 1, "HV": 1, "T": 16, "K": 128, "V": 128, "chunk_size": 64, "op": "recompute_w_u_fwd", "case_id": 0, "seed": 20260817, "route": "ascendc", "soc": "ascend910b"}`
+- FP16 用例：`{"dtype": "fp16", "B": 1, "HK": 1, "HV": 1, "T": 16, "K": 128, "V": 128, "chunk_size": 64, "op": "recompute_w_u_fwd", "case_id": 1, "seed": 20260818, "route": "ascendc", "soc": "ascend910b"}`
 
 ## 执行方式
 

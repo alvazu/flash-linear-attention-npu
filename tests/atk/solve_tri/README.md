@@ -4,9 +4,13 @@
 
 ## 输入约束
 
-x=[B,H,T,chunk_size]; B=1, H=1, T=16, chunk_size=64, layout=bnsd.
-
-默认用例均使用定长小 shape，用于提升精度、性能、确定性和内存检测速度。
+- `layout` 支持 `bsnd/bnsd/tnd/ntd`。
+- `BSND/BNSD` 输入必须为 4D；`TND/NTD` 输入必须为 3D。
+- `BSND` 逻辑为 `[B,T,H,chunk_size]`，`BNSD` 逻辑为 `[B,H,T,chunk_size]`；`TND/NTD` 使用打包 token 维。
+- `x/out` 仅支持 `FLOAT16/BFLOAT16`，输出 shape 与输入一致。
+- 最后一维 `chunk_size` 仅支持 `64/128`。
+- `TND/NTD` 变长模式必须同时提供 `cu_seqlens` 和 `chunk_indices`；`chunk_indices` 描述每个 chunk 的序列与局部 chunk 序号。
+- 当前 ATK 用例遵循上述约束，并通过 `case_spec` 固定具体取值；扩展用例时应继续满足这些限制。
 
 ## 标杆来源
 
@@ -20,8 +24,8 @@ YAML 元信息覆盖 `ascend910b`、`ascend910_93` 和 `ascend950`，可配合�
 
 ## 默认用例
 
-- `bf16_small`: `{"name": "bf16_small", "dtype": "bf16", "B": 1, "H": 1, "T": 16, "chunk_size": 64, "layout": "bnsd", "op": "solve_tri", "case_id": 0, "seed": 20260817, "route": "ascendc", "soc": "ascend910b"}`
-- `fp16_small`: `{"name": "fp16_small", "dtype": "fp16", "B": 1, "H": 1, "T": 16, "chunk_size": 64, "layout": "bnsd", "op": "solve_tri", "case_id": 1, "seed": 20260818, "route": "ascendc", "soc": "ascend910b"}`
+- BF16 用例：`{"dtype": "bf16", "B": 1, "H": 1, "T": 16, "chunk_size": 64, "layout": "bnsd", "op": "solve_tri", "case_id": 0, "seed": 20260817, "route": "ascendc", "soc": "ascend910b"}`
+- FP16 用例：`{"dtype": "fp16", "B": 1, "H": 1, "T": 16, "chunk_size": 64, "layout": "bnsd", "op": "solve_tri", "case_id": 1, "seed": 20260818, "route": "ascendc", "soc": "ascend910b"}`
 
 ## 执行方式
 
