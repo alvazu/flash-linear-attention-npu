@@ -493,7 +493,6 @@ def _stage_run_package(run_file, opp_root):
     op_api_alias = op_api_lib.with_name("libopapi.so")
     if op_api_alias.exists() or op_api_alias.is_symlink():
         op_api_alias.unlink()
-    shutil.copy2(op_api_lib, op_api_alias)
     _validate_staged_opp(vendor_dir)
     print(f"[fla-npu build] Embedded OPP staged at {vendor_dir}")
 

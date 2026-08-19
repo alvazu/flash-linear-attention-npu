@@ -44,7 +44,7 @@ from fla_npu.ops.triton import (
     chunk_scaled_dot_kkt_fwd as triton_chunk_scaled_dot_kkt_fwd,
     input_guard,
     l2norm_bwd,
-    l2norm_fwd,
+    l2norm_fwd, 
     solve_tril_npu as solve_tril,
 )
 

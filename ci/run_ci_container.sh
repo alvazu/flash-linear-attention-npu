@@ -14,7 +14,7 @@ set -euo pipefail
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_dir"
 
-image="${CI_IMAGE:-fla-npu-ci:8.5.0-910b}"
+image="${CI_IMAGE:-fla-npu-ci:9.1.0-910b}"
 container_name="${CI_CONTAINER_NAME:-fla-npu-ci-$(date +%s)}"
 cache_root="${CI_CACHE_ROOT:-}"
 npu_lock_fd=""
@@ -190,7 +190,6 @@ docker run --rm \
     -e CI_TMPDIR_CANDIDATES="${CI_TMPDIR_CANDIDATES:-}" \
     -e CI_TMPDIR_MIN_KB="${CI_TMPDIR_MIN_KB:-}" \
     -e FLA_NPU_SOC="${FLA_NPU_SOC:-${CI_SOC:-${NPU_SOC}}}" \
-    -e FLA_NPU_INCREMENTAL_BUILD="${FLA_NPU_INCREMENTAL_BUILD:-false}" \
     -e FLA_NPU_LOCAL_VERSION="${FLA_NPU_LOCAL_VERSION:-}" \
     -e FLA_NPU_TORCH_VERSION="${FLA_NPU_TORCH_VERSION:-}" \
     -e FLA_NPU_CXX11_ABI="${FLA_NPU_CXX11_ABI:-}" \

@@ -1,5 +1,5 @@
 all_version: [v2.1, v2.2, v2.3, v2.4, v2.5, v2.6, v2.7, v2.8, v2.9, v2.10, v2.11]
-official:
+official: []
 
 
 custom:
@@ -48,10 +48,10 @@ custom:
   - func: npu_kda_gate_cumsum(Tensor g, int chunk_size, *, Tensor? A_log=None, Tensor? dt_bias=None, int[]? cu_seqlens=None, bool? use_gate_in_kernel=False, bool? safe_gate=False, float? lower_bound=None, str layout="BSND") -> Tensor
     op_api: all_version
 
-autograd:
+autograd: []
 
 
-symint:
+symint: []
 
 
-quant:
+quant: []

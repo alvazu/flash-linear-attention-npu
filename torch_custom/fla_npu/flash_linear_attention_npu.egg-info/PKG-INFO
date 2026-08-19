@@ -1,0 +1,5 @@
+Metadata-Version: 2.4
+Name: flash-linear-attention-npu
+Version: 26.7.0.dev0
+Summary: FLA NPU Python runtime
+Dynamic: summary
