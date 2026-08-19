@@ -1,0 +1,56 @@
+tests/requirements.txt
+  h_0b241a6196643c 1-2
+examples/flash_gated_delta_rule.py.bak
+  h_0b241a6196643c 47
+ci/Dockerfile
+  s_4282da12b002e5::t_153e32c8ac8708 78
+  s_4282da12b002e5::t_1a7f0cecaeb1ae 77
+ci/run_checks.sh
+  h_0b241a6196643c 108-128,165-166,319,322-325,337-341,433-439,442-458,497
+  s_65b8670b189684::t_c665fa5524a311 429
+torch_custom/fla_npu/npu_custom.yaml
+  s_4282da12b002e5::t_ad1f304feca957 2
+  s_4282da12b002e5::t_9b11f36857faa4 51,54,57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "88515b0030ba8800116a02fc864c1af0a50ed3ee",
+  "prompts": {},
+  "humans": {
+    "h_0b241a6196643c": {
+      "author": "alvazu <x@wire.me>"
+    }
+  },
+  "sessions": {
+    "s_4282da12b002e5": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a83c74e2c5562abd3cf79aa",
+        "model": "glm-5.2"
+      },
+      "human_author": "alvazu <x@wire.me>",
+      "custom_attributes": {
+        "edit_kind": "file_edit",
+        "source_scene": "agent",
+        "session_id": "6a83c74e2c5562abd3cf79aa",
+        "dedupe_key": "6a83c74e2c5562abd3cf79aa:6a845b152c5562abd3cf7c55:afterEdit:5e5f6562",
+        "tool_use_id": "6a845b152c5562abd3cf7c55",
+        "client_type": "ide",
+        "tool_id": "icube:applyChatSnapshotPatch",
+        "tool_type": "builtin",
+        "external_session_id": "6a83c74e2c5562abd3cf79aa",
+        "operation_id": "6a845b152c5562abd3cf7c55",
+        "runtime_client": "trae-tob-git-ai"
+      }
+    },
+    "s_65b8670b189684": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a8455d7b049416625e0f435",
+        "model": "deepseek_v4_flash_official__dev"
+      },
+      "human_author": "alvazu <x@wire.me>"
+    }
+  }
+}
