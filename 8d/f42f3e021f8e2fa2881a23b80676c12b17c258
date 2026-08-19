@@ -1,0 +1,70 @@
+torch_custom/fla_npu/npu_custom.yaml
+  h_0b241a6196643c 2,36,46,51,54,57
+examples/flash_gated_delta_rule.py
+  h_0b241a6196643c 1,16,21,27,30,44,55,817,826,837,849,861,892
+.ci-tmp/tmpmkgjncwh/_remote_module_non_scriptable.py
+  s_39c050ef1d2880::t_e2941aac544d83 1-81
+fla/ops/ascendc/gdn/chunk_gdn_fwd/chunk_gated_delta_rule_fwd_h/README.md
+  s_143f7ba3a17393::t_d2d4481362d3fb 1-2,4,6,8,10-12,14,16-18,20-24,26,28,30,32,34,36-37,39-40,42,45-66,73,76,79-80,86-374,377-381,383-404
+fla/ops/ascendc/gdn/chunk_gdn_fwd/chunk_gated_delta_rule_fwd_h/op_host/chunk_gated_delta_rule_fwd_h_def.cpp
+  s_143f7ba3a17393::t_105f713475887e 25-27,32-34,39-41,46-48,53-55,58,60-62,68-70,76-78,83-85,89-91,94-97
+fla/ops/ascendc/gdn/chunk_gdn_fwd/chunk_gated_delta_rule_fwd_h/op_host/chunk_gated_delta_rule_fwd_h_tiling.cpp
+  s_143f7ba3a17393::t_4a6479e010ed6b 45-49,82-84,94,103-108,111,123-124
+fla/ops/ascendc/gdn/chunk_gdn_fwd/chunk_gated_delta_rule_fwd_h/op_host/chunk_gated_delta_rule_fwd_h_tiling.h
+  s_143f7ba3a17393::t_5564e0bd4a8ba5 36
+fla/ops/ascendc/gdn/chunk_gdn_fwd/chunk_gated_delta_rule_fwd_h/op_host/op_api/aclnn_chunk_gated_delta_rule_fwd_h.cpp
+  s_143f7ba3a17393::t_77e73b9c263858 17-18,36-39,50,53,56-57,102-127,147,178-180,193-203,230,244,247,250-251,263,266,269-270,276,285-287,289,292-293,298
+fla/ops/ascendc/gdn/chunk_gdn_fwd/chunk_gated_delta_rule_fwd_h/op_host/op_api/aclnn_chunk_gated_delta_rule_fwd_h.h
+  s_143f7ba3a17393::t_bee01329e20a64 25,28,31-32,46,49,52-53
+fla/ops/ascendc/gdn/chunk_gdn_fwd/chunk_gated_delta_rule_fwd_h/op_host/op_api/chunk_gated_delta_rule_fwd_h.cpp
+  s_143f7ba3a17393::t_936c2af3ed086b 27,37,60,62
+fla/ops/ascendc/gdn/chunk_gdn_fwd/chunk_gated_delta_rule_fwd_h/op_host/op_api/chunk_gated_delta_rule_fwd_h.h
+  s_143f7ba3a17393::t_dea73e989952ff 22
+fla/ops/ascendc/gdn/chunk_gdn_fwd/chunk_gated_delta_rule_fwd_h/op_kernel/arch35/epilogue/block/block_epilogue_gdn_fwdh_update.hpp
+  s_143f7ba3a17393::t_04f9aac06aa8db 148,152-167,186,202,216-223,225-232,236-237,239,259,263-269,272-274,282-284,297-299,301-309,314,318-321,325,328-329,332,337,343,350,362-363
+fla/ops/ascendc/gdn/chunk_gdn_fwd/chunk_gated_delta_rule_fwd_h/op_kernel/arch35/epilogue/block/block_epilogue_gdn_fwdh_vnew.hpp
+  s_143f7ba3a17393::t_3400dd20e9cce9 205-226,250,268,276,300-303,310-312,314-319,326,374-375,397-398,409-414,420
+fla/ops/ascendc/gdn/chunk_gdn_fwd/chunk_gated_delta_rule_fwd_h/op_kernel/arch35/gemm/block/block_scheduler_gdn_fwd_h.hpp
+  s_143f7ba3a17393::t_8b874d20c552c4 156-157,160,165,167,173-174,206-209
+fla/ops/ascendc/gdn/chunk_gdn_fwd/chunk_gated_delta_rule_fwd_h/op_kernel/arch35/gemm/kernel/gdn_fwd_h_kernel.hpp
+  s_143f7ba3a17393::t_250280f54f8f0d 60,65-66,75,84,111,115,218-219,251-253,257,274-278,281-293,296,298,302-306,308-328,330,341,343-452,455,459-461,467-470,475-476,533,550,561,564
+fla/ops/ascendc/gdn/chunk_gdn_fwd/chunk_gated_delta_rule_fwd_h/op_kernel/chunk_gated_delta_rule_fwd_h.cpp
+  s_143f7ba3a17393::t_2a3e6659b9a7c3 27,33,45,47-87,89-125
+fla/ops/ascendc/gdn/chunk_gdn_fwd/chunk_gated_delta_rule_fwd_h/op_kernel/epilogue/block/block_epilogue_gdn_fwdh_update.hpp
+  s_143f7ba3a17393::t_69105723ff576b 158,174,190-197,199-206,210-211,225,229-232,234,255-256,264,266,271,284,319,340,344-350,352,378-379,387-388,396,407,411
+fla/ops/ascendc/gdn/chunk_gdn_fwd/chunk_gated_delta_rule_fwd_h/op_kernel/epilogue/block/block_epilogue_gdn_fwdh_vnew.hpp
+  s_143f7ba3a17393::t_b232c7d3bf02cb 235,263,278,282-285,322,363-365,368
+fla/ops/ascendc/gdn/chunk_gdn_fwd/chunk_gated_delta_rule_fwd_h/op_kernel/gemm/block/block_scheduler_gdn_fwd_h.hpp
+  s_143f7ba3a17393::t_aeb3fd3f315ce0 156-157,160,165,167,173-174,185-186,189,194,206-209
+fla/ops/ascendc/gdn/chunk_gdn_fwd/chunk_gated_delta_rule_fwd_h/op_kernel/gemm/kernel/gdn_fwd_h_kernel.hpp
+  s_143f7ba3a17393::t_80c3c6159e9243 41,46-47,56,89,93,187,195,220-222,230-233,255-257,260,285-287,292,294-295,300,302-407,411,414,418-420,426-429,436,438-467,497,508,519,527-528,530-555,557-560
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "8df42f3e021f8e2fa2881a23b80676c12b17c258",
+  "prompts": {},
+  "humans": {
+    "h_0b241a6196643c": {
+      "author": "alvazu <x@wire.me>"
+    }
+  },
+  "sessions": {
+    "s_143f7ba3a17393": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a8449ea0ffe1fd9e00e952c",
+        "model": "DeepSeek-V4-Flash__max"
+      },
+      "human_author": "alvazu <x@wire.me>"
+    },
+    "s_39c050ef1d2880": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a83d14dae74d6502c59316d",
+        "model": "deepseek_v4_flash_official__dev"
+      },
+      "human_author": "alvazu <x@wire.me>"
+    }
+  }
+}
