@@ -1,0 +1,254 @@
+[2026-08-20 09:36:41,650] [INFO] [MainProcess] [1882645] [decorators.py:34]  task_output_path: /data/huangjunzhe/GDN/github/alvazu/flash-linear-attention-npu/fla/ops/ascendc/gdn/chunk_gdn_bwd/chunk_bwd_dqkwg/tests/ATK/atk_output/all_aclnn_chunk_bwd_dqkwg_2026-08-20-09-36-41-310855
+[2026-08-20 09:36:41,651] [INFO] [MainProcess] [1882645] [decorators.py:34]  start atk task: namespace(case='all_aclnn_chunk_bwd_dqkwg.json', task=['accuracy'], plugin_path='executor_chunk_bwd_dqkwg.py', fast_case=None, slice_input=None, slice_input_ratio=None, nodes=None, log='info', celery_log='warning', save_data=None, print_data='', start=None, end=None, acl_json='', white_list=None, black_list=None, random_nums=None, random_align_32b_nums=None, bm_device=<BenchmarkDevice.CPU: 'cpu'>, syc_dataset=False, single_process=False, mssanitizer=False, ms_log_path=None, max_task=100, trace=False, timeout=None, db_timeout=None, db_path=None, xrun_whl=None, bind_cpu_type='1', boundary_filter='default', keyword_filter=None, cpp_func_signature_type_path=False, triton_ut_path=None, atb_api_path=None, input_data=None, experimental_config_path=None, bm_output_path=None, bm_output_path_adr='', use_golden_value_as_remote=False, sqlite_web_port='8881', loop_nums=1, disable_id_seed=False, dc_loop_nums=50, performance_data=[], atc_config=None, get_tiling_key_path=None, need_time=True, ct_tool=False, gm_init_flag=False, fluctuation_check=False, replace_inf_with_dtype_bound=False, clean_l2_cache=False, enable_custom_data=False, nodes_list=[{'backend': <NodeType.PYACLNN: 'pyaclnn'>, 'devices': [4], 'name': None, 'host': '127.0.0.1', 'port': 9090, 'task': None, 'output_path': None, 'run_modes': None, 'is_compare': True, 'is_bm': False, 'is_dist': False, 'dist_backend': 'hccl', 'bm_file': None, 'fusion_flag': False}, {'backend': <NodeType.CPU: 'cpu'>, 'name': None, 'devices': None, 'host': '127.0.0.1', 'port': 9090, 'task': None, 'output_path': None, 'run_modes': None, 'is_compare': True, 'is_bm': False, 'is_dist': False, 'dist_backend': 'hccl', 'bm_file': None, 'fusion_flag': False}])
+[2026-08-20 09:36:41,758] [INFO] [MainProcess] [1882645] [executor_chunk_bwd_dqkwg.py:146]  executor_chunk_bwd_dqkwg is already registered, repeated registration will coverage it, new module path is executor_chunk_bwd_dqkwg
+[2026-08-20 09:36:41,834] [INFO] [127.0.0.1:9090@create_dataset] [1886739] [patch_getenv.py:15]  get env ATK_CPU_INFO = {"cpu_ids_without_devices": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239], "device_cpu_ids": {"4": [249, 248]}}
+[2026-08-20 09:36:41,837] [INFO] [127.0.0.1:9090@create_dataset] [1886739] [process.py:314]  start run {'queues': '127.0.0.1:9090@create_dataset', 'pool': 'prefork', 'concurrency': 4, 'autoscale': '4,4', 'prefetch_multiplier': 16}
+[2026-08-20 09:36:41,905] [INFO] [ForkPoolWorker-1] [1886757] [patch_getenv.py:15]  get env CELERY_LOG_LEVEL = 30
+[2026-08-20 09:36:41,925] [INFO] [ForkPoolWorker-2] [1886777] [patch_getenv.py:15]  get env CELERY_LOG_LEVEL = 30
+[2026-08-20 09:36:41,947] [INFO] [ForkPoolWorker-3] [1886782] [patch_getenv.py:15]  get env CELERY_LOG_LEVEL = 30
+[2026-08-20 09:36:41,966] [INFO] [127.0.0.1:9090@device_run_4] [1886800] [patch_getenv.py:15]  get env ATK_CPU_INFO = {"cpu_ids_without_devices": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239], "device_cpu_ids": {"4": [249, 248]}}
+[2026-08-20 09:36:41,969] [INFO] [127.0.0.1:9090@device_run_4] [1886800] [process.py:314]  start run {'queues': '127.0.0.1:9090@device_run_4', 'pool': 'solo', 'concurrency': 1, 'autoscale': '1,1', 'prefetch_multiplier': 16}
+[2026-08-20 09:36:41,969] [INFO] [ForkPoolWorker-4] [1886786] [patch_getenv.py:15]  get env CELERY_LOG_LEVEL = 30
+[2026-08-20 09:36:42,093] [INFO] [127.0.0.1:9090@cpu_run] [1886826] [patch_getenv.py:15]  get env ATK_CPU_INFO = {"cpu_ids_without_devices": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239], "device_cpu_ids": {"4": [249, 248]}}
+[2026-08-20 09:36:42,095] [INFO] [127.0.0.1:9090@cpu_run] [1886826] [process.py:314]  start run {'queues': '127.0.0.1:9090@cpu_run', 'pool': 'prefork', 'concurrency': 4, 'autoscale': '4,4', 'prefetch_multiplier': 16}
+[2026-08-20 09:36:42,165] [INFO] [ForkPoolWorker-1] [1886870] [patch_getenv.py:15]  get env CELERY_LOG_LEVEL = 30
+[2026-08-20 09:36:42,186] [INFO] [ForkPoolWorker-2] [1886875] [patch_getenv.py:15]  get env CELERY_LOG_LEVEL = 30
+[2026-08-20 09:36:42,210] [INFO] [ForkPoolWorker-3] [1886939] [patch_getenv.py:15]  get env CELERY_LOG_LEVEL = 30
+[2026-08-20 09:36:42,225] [INFO] [127.0.0.1:9090@compare] [1886958] [patch_getenv.py:15]  get env ATK_CPU_INFO = {"cpu_ids_without_devices": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239], "device_cpu_ids": {"4": [249, 248]}}
+[2026-08-20 09:36:42,227] [INFO] [127.0.0.1:9090@compare] [1886958] [process.py:314]  start run {'queues': '127.0.0.1:9090@compare', 'pool': 'prefork', 'concurrency': 4, 'autoscale': '4,4', 'prefetch_multiplier': 16}
+[2026-08-20 09:36:42,238] [INFO] [ForkPoolWorker-4] [1886946] [patch_getenv.py:15]  get env CELERY_LOG_LEVEL = 30
+[2026-08-20 09:36:42,297] [INFO] [ForkPoolWorker-1] [1886964] [patch_getenv.py:15]  get env CELERY_LOG_LEVEL = 30
+[2026-08-20 09:36:42,320] [INFO] [ForkPoolWorker-2] [1886969] [patch_getenv.py:15]  get env CELERY_LOG_LEVEL = 30
+[2026-08-20 09:36:42,322] [INFO] [MainProcess] [1882645] [patch_getenv.py:15]  get env ATK_CPU_INFO = {"cpu_ids_without_devices": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239], "device_cpu_ids": {"4": [249, 248]}}
+[2026-08-20 09:36:42,342] [INFO] [ForkPoolWorker-3] [1886983] [patch_getenv.py:15]  get env CELERY_LOG_LEVEL = 30
+[2026-08-20 09:36:42,369] [INFO] [ForkPoolWorker-4] [1886999] [patch_getenv.py:15]  get env CELERY_LOG_LEVEL = 30
+[2026-08-20 09:36:42,388] [INFO] [MainProcess] [1882645] [decorators.py:34]  create_tasks start!!!, case_config_name:aclnn.chunk.bwd.dqkwg, all_cases_num: 1
+[2026-08-20 09:36:42,445] [INFO] [MainProcess] [1882645] [decorators.py:34]  create_tasks over!!!, case_config_name:aclnn.chunk.bwd.dqkwg, all_cases_num: 1
+[2026-08-20 09:36:42,966] [INFO] [ForkPoolWorker-1] [1886757] [trace.py:736]  [case 0] start CREATE DATASET.
+[2026-08-20 09:36:43,001] [INFO] [ForkPoolWorker-1] [1886757] [trace.py:736]  [case 0] SUCCESS CREATE DATASET.
+[2026-08-20 09:36:43,234] [INFO] [ForkPoolWorker-1] [1886870] [trace.py:736]  [case 0] start run CPU OPP TASK.
+[2026-08-20 09:36:43,244] [INFO] [ForkPoolWorker-1] [1886870] [trace.py:736]  [case 0][RUN OPP TASK] START Init by input data.
+[2026-08-20 09:36:43,322] [INFO] [ForkPoolWorker-1] [1886870] [trace.py:736]  [case 0][RUN OPP TASK] SUCCESS Init by input data.
+[2026-08-20 09:36:43,323] [INFO] [ForkPoolWorker-1] [1886870] [trace.py:736]  [case 0][RUN OPP TASK] Start Execute OPP on ['accuracy']
+[2026-08-20 09:36:44,714] [INFO] [ForkPoolWorker-1] [1886870] [trace.py:736]  [case 0][RUN OPP TASK] SUCCESS Execute OPP.
+[2026-08-20 09:36:44,715] [INFO] [ForkPoolWorker-1] [1886870] [trace.py:736]  [case 0] SUCCESS run CPU OPP TASK.
+[2026-08-20 09:36:45,004] [INFO] [127.0.0.1:9090@device_run_4] [1886800] [trace.py:736]  [case 0] start run PYACLNN OPP TASK.
+[2026-08-20 09:36:45,007] [WARNING] [127.0.0.1:9090@device_run_4] [1886800] [trace.py:736]  在 /data/huangjunzhe/Ascend.GDN/cann-9.0.0/opp/../aarch64-linux/lib64/libopapi_math.so 中未找到接口：aclnnChunkBwdDqkwgGetWorkspaceSize
+[2026-08-20 09:36:45,008] [WARNING] [127.0.0.1:9090@device_run_4] [1886800] [trace.py:736]  在 /data/huangjunzhe/Ascend.GDN/cann-9.0.0/opp/../aarch64-linux/lib64/libopapi_nn.so 中未找到接口：aclnnChunkBwdDqkwgGetWorkspaceSize
+[2026-08-20 09:36:45,008] [WARNING] [127.0.0.1:9090@device_run_4] [1886800] [trace.py:736]  在 /data/huangjunzhe/Ascend.GDN/cann-9.0.0/opp/../aarch64-linux/lib64/libopapi_cv.so 中未找到接口：aclnnChunkBwdDqkwgGetWorkspaceSize
+[2026-08-20 09:36:45,009] [INFO] [127.0.0.1:9090@device_run_4] [1886800] [trace.py:736]  在 /data/huangjunzhe/Ascend.GDN/cann-9.0.0/opp/../aarch64-linux/lib64/libopapi_transformer.so 中找到接口：aclnnChunkBwdDqkwgGetWorkspaceSize
+[2026-08-20 09:36:45,009] [INFO] [127.0.0.1:9090@device_run_4] [1886800] [trace.py:736]  import aclnnChunkBwdDqkwgGetWorkspaceSize  from /data/huangjunzhe/Ascend.GDN/cann-9.0.0/opp/../aarch64-linux/lib64/libopapi_transformer.so success!
+[2026-08-20 09:36:45,236] [INFO] [ForkPoolWorker-2] [1886875] [trace.py:736]  [case 0] start run CPU OPP TASK.
+[2026-08-20 09:36:45,237] [INFO] [ForkPoolWorker-2] [1886875] [trace.py:736]  [case 0] Use double benchmark standard, run golden task in CPU.
+[2026-08-20 09:36:45,237] [INFO] [ForkPoolWorker-2] [1886875] [trace.py:736]  name='0' backend='pyaclnn' host='127.0.0.1' port=9090 ssh_user=None ssh_port=22 ssh_key_path=None download_transport=None master_ip='127.0.0.1' master_port=50001 task=[<TaskType.ACCURACY: 'accuracy'>] devices=[4] ranks=None remote_devices=None remote_ranks=None world_size=None output_path='/data/huangjunzhe/GDN/github/alvazu/flash-linear-attention-npu/fla/ops/ascendc/gdn/chunk_gdn_bwd/chunk_bwd_dqkwg/tests/ATK' run_modes=None is_compare=True bm_file=None fusion_flag=False is_bm=False is_dist=False dist_backend='hccl' task_output_file_name='all_aclnn_chunk_bwd_dqkwg_2026-08-20-09-36-41-310855'
+[2026-08-20 09:36:45,238] [INFO] [ForkPoolWorker-2] [1886875] [trace.py:736]  name='0' backend='cpu' host='127.0.0.1' port=9090 ssh_user=None ssh_port=22 ssh_key_path=None download_transport=None master_ip='127.0.0.1' master_port=50001 task=[<TaskType.ACCURACY: 'accuracy'>] devices=[0] ranks=None remote_devices=None remote_ranks=None world_size=None output_path='/data/huangjunzhe/GDN/github/alvazu/flash-linear-attention-npu/fla/ops/ascendc/gdn/chunk_gdn_bwd/chunk_bwd_dqkwg/tests/ATK' run_modes=None is_compare=True bm_file=None fusion_flag=False is_bm=False is_dist=False dist_backend='hccl' task_output_file_name='all_aclnn_chunk_bwd_dqkwg_2026-08-20-09-36-41-310855'
+[2026-08-20 09:36:45,316] [INFO] [ForkPoolWorker-2] [1886875] [trace.py:736]  [case 0][RUN OPP TASK] START Init by input data.
+[2026-08-20 09:36:45,404] [INFO] [ForkPoolWorker-2] [1886875] [trace.py:736]  [case 0][RUN OPP TASK] SUCCESS Init by input data.
+[2026-08-20 09:36:45,406] [INFO] [ForkPoolWorker-2] [1886875] [trace.py:736]  load benchmark output data from /data/huangjunzhe/GDN/github/alvazu/flash-linear-attention-npu/fla/ops/ascendc/gdn/chunk_gdn_bwd/chunk_bwd_dqkwg/tests/ATK/atk_output/all_aclnn_chunk_bwd_dqkwg_2026-08-20-09-36-41-310855/output/cpu_benchmark/all_aclnn_chunk_bwd_dqkwg/0
+[2026-08-20 09:36:46,500] [INFO] [127.0.0.1:9090@device_run_4] [1886800] [trace.py:736]  [case 0][RUN OPP TASK] START Init by input data.
+[2026-08-20 09:36:46,683] [WARNING] [127.0.0.1:9090@device_run_4] [1886800] [warnings.py:110]  /data/miniconda3/envs/hjz/lib/python3.11/site-packages/torch_npu/utils/storage.py:89: UserWarning: TypedStorage is deprecated. It will be removed in the future and UntypedStorage will be the only storage class. This should only matter to you if you are using storages directly.  To access UntypedStorage directly, use tensor.untyped_storage() instead of tensor.storage()
+  if self.device.type != 'cpu':
+
+[2026-08-20 09:36:46,859] [INFO] [127.0.0.1:9090@device_run_4] [1886800] [trace.py:736]  [case 0][RUN OPP TASK] SUCCESS Init by input data.
+[2026-08-20 09:36:46,859] [INFO] [127.0.0.1:9090@device_run_4] [1886800] [trace.py:736]  [case 0][RUN OPP TASK] Start Execute OPP on ['accuracy']
+[2026-08-20 09:36:46,950] [ERROR] [127.0.0.1:9090@device_run_4] [1886800] [trace.py:736]  case 0 run opp failed: 
+ctypes aclnn function 'aclrtSynchronizeStream' failed! error code: 507015
+ACL Error Details:
+EZ9999: Inner Error!
+EZ9999[PID: 1886800] 2026-08-20-09:36:46.927.963 (EZ9999):  The error from device(chipId:4, dieId:0), serial number is 1, there is an exception of fftsplus aicore error, core id is 0, error code = 0, dump info: pc start: 0x12c042c00000, current: 0x12c042c084cc, vec error info: 0, mte error info: 0xc803010016, ifu error info: 0x212c6d4af85c0, ccu error info: 0xf6cec01f00000000, cube error info: 0, biu error info: 0, aic error mask: 0x6500020bd00028c, para base: 0x12c100000080.[FUNC:PrintCoreInfo][FILE:device_error_core_proc.cc][LINE:645]
+TraceBack (most recent call last):
+The extend info: errcode:(0, 0x8000, 0) errorStr: When the D-cache reads and writes data to the UB, the response value returned by the bus is a non-zero value. fixp_error0 info: 0x3010016, fixp_error1 info: 0xc8, fsmId:0, tslot:0, thread:0, ctxid:0, blk:0, sublk:0, subErrType:4.[FUNC:PrintCoreInfo][FILE:device_error_core_proc.cc][LINE:658]
+Kernel task happen error, retCode=0x26, [aicore exception].[FUNC:PreCheckTaskErr][FILE:davinci_kernel_task.cc][LINE:1729]
+rtStreamSynchronize execution failed, reason=aicore exception[FUNC:FuncErrorReason][FILE:error_message_manage.cc][LINE:65]
+synchronize stream failed, runtime result = 507015[FUNC:ReportCallError][FILE:log_inner.cpp][LINE:148]
+
+[2026-08-20 09:36:46,952] [ERROR] [127.0.0.1:9090@device_run_4] [1886800] [trace.py:736]  
+ctypes aclnn function 'aclrtSynchronizeStream' failed! error code: 507015
+ACL Error Details:
+EZ9999: Inner Error!
+EZ9999[PID: 1886800] 2026-08-20-09:36:46.927.963 (EZ9999):  The error from device(chipId:4, dieId:0), serial number is 1, there is an exception of fftsplus aicore error, core id is 0, error code = 0, dump info: pc start: 0x12c042c00000, current: 0x12c042c084cc, vec error info: 0, mte error info: 0xc803010016, ifu error info: 0x212c6d4af85c0, ccu error info: 0xf6cec01f00000000, cube error info: 0, biu error info: 0, aic error mask: 0x6500020bd00028c, para base: 0x12c100000080.[FUNC:PrintCoreInfo][FILE:device_error_core_proc.cc][LINE:645]
+TraceBack (most recent call last):
+The extend info: errcode:(0, 0x8000, 0) errorStr: When the D-cache reads and writes data to the UB, the response value returned by the bus is a non-zero value. fixp_error0 info: 0x3010016, fixp_error1 info: 0xc8, fsmId:0, tslot:0, thread:0, ctxid:0, blk:0, sublk:0, subErrType:4.[FUNC:PrintCoreInfo][FILE:device_error_core_proc.cc][LINE:658]
+Kernel task happen error, retCode=0x26, [aicore exception].[FUNC:PreCheckTaskErr][FILE:davinci_kernel_task.cc][LINE:1729]
+rtStreamSynchronize execution failed, reason=aicore exception[FUNC:FuncErrorReason][FILE:error_message_manage.cc][LINE:65]
+synchronize stream failed, runtime result = 507015[FUNC:ReportCallError][FILE:log_inner.cpp][LINE:148]
+Traceback (most recent call last):
+  File "atk/tasks/opp_tasks.py", line 271, in atk.tasks.opp_tasks.run_opp_case
+  File "atk/common/utils.py", line 117, in atk.common.utils.record_times.decorate.wrapper
+  File "atk/tasks/executors/opp_executor.py", line 74, in atk.tasks.executors.opp_executor.OppExecutor.run_opp_case
+  File "atk/tasks/executors/opp_executor.py", line 566, in atk.tasks.executors.opp_executor.OppExecutor._execute_accuracy_tasks
+  File "atk/common/utils.py", line 117, in atk.common.utils.record_times.decorate.wrapper
+  File "atk/tasks/executors/opp_executor.py", line 93, in atk.tasks.executors.opp_executor.OppExecutor.run_accuracy
+  File "atk/tasks/backends/pyaclnn_backend.py", line 513, in atk.tasks.backends.pyaclnn_backend.PyAclnnBackend.run_accuracy
+  File "atk/tasks/backends/pyaclnn_backend.py", line 456, in atk.tasks.backends.pyaclnn_backend.PyAclnnBackend.synchronize
+  File "atk/tasks/backends/lib_interface/acl_wrapper.py", line 262, in atk.tasks.backends.lib_interface.acl_wrapper.AclnnManager.__getattr__.wrapper
+atk.tasks.backends.lib_interface.acl_wrapper.ACLRuntimeError: 
+ctypes aclnn function 'aclrtSynchronizeStream' failed! error code: 507015
+ACL Error Details:
+EZ9999: Inner Error!
+EZ9999[PID: 1886800] 2026-08-20-09:36:46.927.963 (EZ9999):  The error from device(chipId:4, dieId:0), serial number is 1, there is an exception of fftsplus aicore error, core id is 0, error code = 0, dump info: pc start: 0x12c042c00000, current: 0x12c042c084cc, vec error info: 0, mte error info: 0xc803010016, ifu error info: 0x212c6d4af85c0, ccu error info: 0xf6cec01f00000000, cube error info: 0, biu error info: 0, aic error mask: 0x6500020bd00028c, para base: 0x12c100000080.[FUNC:PrintCoreInfo][FILE:device_error_core_proc.cc][LINE:645]
+TraceBack (most recent call last):
+The extend info: errcode:(0, 0x8000, 0) errorStr: When the D-cache reads and writes data to the UB, the response value returned by the bus is a non-zero value. fixp_error0 info: 0x3010016, fixp_error1 info: 0xc8, fsmId:0, tslot:0, thread:0, ctxid:0, blk:0, sublk:0, subErrType:4.[FUNC:PrintCoreInfo][FILE:device_error_core_proc.cc][LINE:658]
+Kernel task happen error, retCode=0x26, [aicore exception].[FUNC:PreCheckTaskErr][FILE:davinci_kernel_task.cc][LINE:1729]
+rtStreamSynchronize execution failed, reason=aicore exception[FUNC:FuncErrorReason][FILE:error_message_manage.cc][LINE:65]
+synchronize stream failed, runtime result = 507015[FUNC:ReportCallError][FILE:log_inner.cpp][LINE:148]
+
+[2026-08-20 09:36:46,967] [ERROR] [127.0.0.1:9090@device_run_4] [1886800] [trace.py:736]  Traceback (most recent call last):
+  File "atk/tasks/opp_tasks.py", line 271, in atk.tasks.opp_tasks.run_opp_case
+  File "atk/common/utils.py", line 117, in atk.common.utils.record_times.decorate.wrapper
+  File "atk/tasks/executors/opp_executor.py", line 74, in atk.tasks.executors.opp_executor.OppExecutor.run_opp_case
+  File "atk/tasks/executors/opp_executor.py", line 566, in atk.tasks.executors.opp_executor.OppExecutor._execute_accuracy_tasks
+  File "atk/common/utils.py", line 117, in atk.common.utils.record_times.decorate.wrapper
+  File "atk/tasks/executors/opp_executor.py", line 93, in atk.tasks.executors.opp_executor.OppExecutor.run_accuracy
+  File "atk/tasks/backends/pyaclnn_backend.py", line 513, in atk.tasks.backends.pyaclnn_backend.PyAclnnBackend.run_accuracy
+  File "atk/tasks/backends/pyaclnn_backend.py", line 456, in atk.tasks.backends.pyaclnn_backend.PyAclnnBackend.synchronize
+  File "atk/tasks/backends/lib_interface/acl_wrapper.py", line 262, in atk.tasks.backends.lib_interface.acl_wrapper.AclnnManager.__getattr__.wrapper
+atk.tasks.backends.lib_interface.acl_wrapper.ACLRuntimeError: 
+ctypes aclnn function 'aclrtSynchronizeStream' failed! error code: 507015
+ACL Error Details:
+EZ9999: Inner Error!
+EZ9999[PID: 1886800] 2026-08-20-09:36:46.927.963 (EZ9999):  The error from device(chipId:4, dieId:0), serial number is 1, there is an exception of fftsplus aicore error, core id is 0, error code = 0, dump info: pc start: 0x12c042c00000, current: 0x12c042c084cc, vec error info: 0, mte error info: 0xc803010016, ifu error info: 0x212c6d4af85c0, ccu error info: 0xf6cec01f00000000, cube error info: 0, biu error info: 0, aic error mask: 0x6500020bd00028c, para base: 0x12c100000080.[FUNC:PrintCoreInfo][FILE:device_error_core_proc.cc][LINE:645]
+TraceBack (most recent call last):
+The extend info: errcode:(0, 0x8000, 0) errorStr: When the D-cache reads and writes data to the UB, the response value returned by the bus is a non-zero value. fixp_error0 info: 0x3010016, fixp_error1 info: 0xc8, fsmId:0, tslot:0, thread:0, ctxid:0, blk:0, sublk:0, subErrType:4.[FUNC:PrintCoreInfo][FILE:device_error_core_proc.cc][LINE:658]
+Kernel task happen error, retCode=0x26, [aicore exception].[FUNC:PreCheckTaskErr][FILE:davinci_kernel_task.cc][LINE:1729]
+rtStreamSynchronize execution failed, reason=aicore exception[FUNC:FuncErrorReason][FILE:error_message_manage.cc][LINE:65]
+synchronize stream failed, runtime result = 507015[FUNC:ReportCallError][FILE:log_inner.cpp][LINE:148]
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "atk/tasks/opp_tasks.py", line 320, in atk.tasks.opp_tasks.run_opp_task
+  File "atk/tasks/opp_tasks.py", line 278, in atk.tasks.opp_tasks.run_opp_case
+atk.tasks.backends.backend.ATKRuntimeError: ('case %s run opp case failed: %s', 0)
+
+[2026-08-20 09:36:46,967] [ERROR] [127.0.0.1:9090@device_run_4] [1886800] [trace.py:736]  case 0 run opp failed: ('case %s run opp case failed: %s', 0)
+[2026-08-20 09:36:46,967] [INFO] [127.0.0.1:9090@device_run_4] [1886800] [trace.py:736]  [case 0] start cleanup case artifacts, reason=run_opp_task_failed.
+[2026-08-20 09:36:46,971] [INFO] [127.0.0.1:9090@device_run_4] [1886800] [trace.py:736]  double benchmark accuracy compare kwargs = {'need_md5': True}
+[2026-08-20 09:36:46,973] [INFO] [127.0.0.1:9090@device_run_4] [1886800] [trace.py:736]  [case 0] SUCCESS cleanup case artifacts, reason=run_opp_task_failed.
+[2026-08-20 09:36:46,977] [INFO] [127.0.0.1:9090@device_run_4] [1886800] [trace.py:233]  [case 0] start cleanup case artifacts, reason=on_failure.
+[2026-08-20 09:36:46,978] [INFO] [127.0.0.1:9090@device_run_4] [1886800] [trace.py:233]  double benchmark accuracy compare kwargs = {'need_md5': True}
+[2026-08-20 09:36:46,979] [INFO] [127.0.0.1:9090@device_run_4] [1886800] [trace.py:233]  [case 0] SUCCESS cleanup case artifacts, reason=on_failure.
+[2026-08-20 09:36:46,979] [ERROR] [127.0.0.1:9090@device_run_4] [1886800] [trace.py:233]  aclnn.chunk.bwd.dqkwg_0 on atk.tasks.celery_tasks.celery_run_aclnn_task 127.0.0.1:9090@device_run_4 task failed.
+run opp task failed!
+Traceback (most recent call last):
+  File "atk/tasks/opp_tasks.py", line 271, in atk.tasks.opp_tasks.run_opp_case
+  File "atk/common/utils.py", line 117, in atk.common.utils.record_times.decorate.wrapper
+  File "atk/tasks/executors/opp_executor.py", line 74, in atk.tasks.executors.opp_executor.OppExecutor.run_opp_case
+  File "atk/tasks/executors/opp_executor.py", line 566, in atk.tasks.executors.opp_executor.OppExecutor._execute_accuracy_tasks
+  File "atk/common/utils.py", line 117, in atk.common.utils.record_times.decorate.wrapper
+  File "atk/tasks/executors/opp_executor.py", line 93, in atk.tasks.executors.opp_executor.OppExecutor.run_accuracy
+  File "atk/tasks/backends/pyaclnn_backend.py", line 513, in atk.tasks.backends.pyaclnn_backend.PyAclnnBackend.run_accuracy
+  File "atk/tasks/backends/pyaclnn_backend.py", line 456, in atk.tasks.backends.pyaclnn_backend.PyAclnnBackend.synchronize
+  File "atk/tasks/backends/lib_interface/acl_wrapper.py", line 262, in atk.tasks.backends.lib_interface.acl_wrapper.AclnnManager.__getattr__.wrapper
+atk.tasks.backends.lib_interface.acl_wrapper.ACLRuntimeError: 
+ctypes aclnn function 'aclrtSynchronizeStream' failed! error code: 507015
+ACL Error Details:
+EZ9999: Inner Error!
+EZ9999[PID: 1886800] 2026-08-20-09:36:46.927.963 (EZ9999):  The error from device(chipId:4, dieId:0), serial number is 1, there is an exception of fftsplus aicore error, core id is 0, error code = 0, dump info: pc start: 0x12c042c00000, current: 0x12c042c084cc, vec error info: 0, mte error info: 0xc803010016, ifu error info: 0x212c6d4af85c0, ccu error info: 0xf6cec01f00000000, cube error info: 0, biu error info: 0, aic error mask: 0x6500020bd00028c, para base: 0x12c100000080.[FUNC:PrintCoreInfo][FILE:device_error_core_proc.cc][LINE:645]
+TraceBack (most recent call last):
+The extend info: errcode:(0, 0x8000, 0) errorStr: When the D-cache reads and writes data to the UB, the response value returned by the bus is a non-zero value. fixp_error0 info: 0x3010016, fixp_error1 info: 0xc8, fsmId:0, tslot:0, thread:0, ctxid:0, blk:0, sublk:0, subErrType:4.[FUNC:PrintCoreInfo][FILE:device_error_core_proc.cc][LINE:658]
+Kernel task happen error, retCode=0x26, [aicore exception].[FUNC:PreCheckTaskErr][FILE:davinci_kernel_task.cc][LINE:1729]
+rtStreamSynchronize execution failed, reason=aicore exception[FUNC:FuncErrorReason][FILE:error_message_manage.cc][LINE:65]
+synchronize stream failed, runtime result = 507015[FUNC:ReportCallError][FILE:log_inner.cpp][LINE:148]
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "atk/tasks/opp_tasks.py", line 320, in atk.tasks.opp_tasks.run_opp_task
+  File "atk/tasks/opp_tasks.py", line 278, in atk.tasks.opp_tasks.run_opp_case
+atk.tasks.backends.backend.ATKRuntimeError: ('case %s run opp case failed: %s', 0)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/data/miniconda3/envs/hjz/lib/python3.11/site-packages/celery/app/trace.py", line 453, in trace_task
+    R = retval = fun(*args, **kwargs)
+                 ^^^^^^^^^^^^^^^^^^^^
+  File "/data/miniconda3/envs/hjz/lib/python3.11/site-packages/celery/app/trace.py", line 736, in __protected_call__
+    return self.run(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "atk/tasks/celery_tasks.py", line 40, in atk.tasks.celery_tasks.celery_run_aclnn_task
+  File "atk/tasks/opp_tasks.py", line 389, in atk.tasks.opp_tasks.run_aclnn_task
+  File "atk/tasks/opp_tasks.py", line 335, in atk.tasks.opp_tasks.run_opp_task
+RuntimeError: run opp task failed!
+
+[2026-08-20 09:36:47,050] [ERROR] [127.0.0.1:9090@device_run_4] [1886800] [trace.py:267]  Task atk.tasks.celery_tasks.celery_run_aclnn_task[b11ab245-98e6-4248-b45d-37a654db3056] raised unexpected: RuntimeError('run opp task failed!')
+Traceback (most recent call last):
+  File "atk/tasks/opp_tasks.py", line 271, in atk.tasks.opp_tasks.run_opp_case
+  File "atk/common/utils.py", line 117, in atk.common.utils.record_times.decorate.wrapper
+  File "atk/tasks/executors/opp_executor.py", line 74, in atk.tasks.executors.opp_executor.OppExecutor.run_opp_case
+  File "atk/tasks/executors/opp_executor.py", line 566, in atk.tasks.executors.opp_executor.OppExecutor._execute_accuracy_tasks
+  File "atk/common/utils.py", line 117, in atk.common.utils.record_times.decorate.wrapper
+  File "atk/tasks/executors/opp_executor.py", line 93, in atk.tasks.executors.opp_executor.OppExecutor.run_accuracy
+  File "atk/tasks/backends/pyaclnn_backend.py", line 513, in atk.tasks.backends.pyaclnn_backend.PyAclnnBackend.run_accuracy
+  File "atk/tasks/backends/pyaclnn_backend.py", line 456, in atk.tasks.backends.pyaclnn_backend.PyAclnnBackend.synchronize
+  File "atk/tasks/backends/lib_interface/acl_wrapper.py", line 262, in atk.tasks.backends.lib_interface.acl_wrapper.AclnnManager.__getattr__.wrapper
+atk.tasks.backends.lib_interface.acl_wrapper.ACLRuntimeError: 
+ctypes aclnn function 'aclrtSynchronizeStream' failed! error code: 507015
+ACL Error Details:
+EZ9999: Inner Error!
+EZ9999[PID: 1886800] 2026-08-20-09:36:46.927.963 (EZ9999):  The error from device(chipId:4, dieId:0), serial number is 1, there is an exception of fftsplus aicore error, core id is 0, error code = 0, dump info: pc start: 0x12c042c00000, current: 0x12c042c084cc, vec error info: 0, mte error info: 0xc803010016, ifu error info: 0x212c6d4af85c0, ccu error info: 0xf6cec01f00000000, cube error info: 0, biu error info: 0, aic error mask: 0x6500020bd00028c, para base: 0x12c100000080.[FUNC:PrintCoreInfo][FILE:device_error_core_proc.cc][LINE:645]
+TraceBack (most recent call last):
+The extend info: errcode:(0, 0x8000, 0) errorStr: When the D-cache reads and writes data to the UB, the response value returned by the bus is a non-zero value. fixp_error0 info: 0x3010016, fixp_error1 info: 0xc8, fsmId:0, tslot:0, thread:0, ctxid:0, blk:0, sublk:0, subErrType:4.[FUNC:PrintCoreInfo][FILE:device_error_core_proc.cc][LINE:658]
+Kernel task happen error, retCode=0x26, [aicore exception].[FUNC:PreCheckTaskErr][FILE:davinci_kernel_task.cc][LINE:1729]
+rtStreamSynchronize execution failed, reason=aicore exception[FUNC:FuncErrorReason][FILE:error_message_manage.cc][LINE:65]
+synchronize stream failed, runtime result = 507015[FUNC:ReportCallError][FILE:log_inner.cpp][LINE:148]
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "atk/tasks/opp_tasks.py", line 320, in atk.tasks.opp_tasks.run_opp_task
+  File "atk/tasks/opp_tasks.py", line 278, in atk.tasks.opp_tasks.run_opp_case
+atk.tasks.backends.backend.ATKRuntimeError: ('case %s run opp case failed: %s', 0)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/data/miniconda3/envs/hjz/lib/python3.11/site-packages/celery/app/trace.py", line 453, in trace_task
+    R = retval = fun(*args, **kwargs)
+                 ^^^^^^^^^^^^^^^^^^^^
+  File "/data/miniconda3/envs/hjz/lib/python3.11/site-packages/celery/app/trace.py", line 736, in __protected_call__
+    return self.run(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "atk/tasks/celery_tasks.py", line 40, in atk.tasks.celery_tasks.celery_run_aclnn_task
+  File "atk/tasks/opp_tasks.py", line 389, in atk.tasks.opp_tasks.run_aclnn_task
+  File "atk/tasks/opp_tasks.py", line 335, in atk.tasks.opp_tasks.run_opp_task
+RuntimeError: run opp task failed!
+[2026-08-20 09:36:47,124] [INFO] [ForkPoolWorker-2] [1886875] [trace.py:736]  [case 0] SUCCESS run CPU OPP TASK.
+[2026-08-20 09:36:48,370] [ERROR] [ForkPoolWorker-2] [1886969] [builtins.py:88]  Chord 'b70b64d4-2823-494c-a714-6e8d12cea01b' raised: RuntimeError('run opp task failed!')
+Traceback (most recent call last):
+  File "/data/miniconda3/envs/hjz/lib/python3.11/site-packages/celery/app/builtins.py", line 78, in unlock_chord
+    ret = j(
+          ^^
+  File "/data/miniconda3/envs/hjz/lib/python3.11/site-packages/celery/result.py", line 775, in join
+    value = result.get(
+            ^^^^^^^^^^^
+  File "/data/miniconda3/envs/hjz/lib/python3.11/site-packages/celery/result.py", line 247, in get
+    self.maybe_throw(callback=callback)
+  File "/data/miniconda3/envs/hjz/lib/python3.11/site-packages/celery/result.py", line 365, in maybe_throw
+    self.throw(value, self._to_remote_traceback(tb))
+  File "/data/miniconda3/envs/hjz/lib/python3.11/site-packages/celery/result.py", line 358, in throw
+    self.on_ready.throw(*args, **kwargs)
+  File "/data/miniconda3/envs/hjz/lib/python3.11/site-packages/vine/promises.py", line 235, in throw
+    reraise(type(exc), exc, tb)
+  File "/data/miniconda3/envs/hjz/lib/python3.11/site-packages/vine/utils.py", line 27, in reraise
+    raise value
+RuntimeError: run opp task failed!
+[2026-08-20 09:37:28,205] [ERROR] [MainProcess] [1882645] [decorators.py:34]  received Ctrl+C. start stop!
+[2026-08-20 09:37:28,205] [ERROR] [MainProcess] [1882645] [decorators.py:34]  atk task failed!
+[2026-08-20 09:37:28,216] [ERROR] [ResultProcess-5] [1887029] [process.py:314]  receive KeyboardInterrupt, stop get result!
+[2026-08-20 09:37:28,217] [INFO] [ResultProcess-5] [1887029] [process.py:314]  start write report ...
+[2026-08-20 09:37:28,217] [ERROR] [ResultProcess-5] [1887029] [process.py:314]  All cases is running failed. 
+[2026-08-20 09:37:28,229] [WARNING] [127.0.0.1:9090@cpu_run] [1886826] [control.py:582]  Got shutdown from remote
+[2026-08-20 09:37:28,218] [INFO] [ResultProcess-5] [1887029] [process.py:314]  
++-------+----------+------------------+------------------+--------------+----------------------+--------+--------------+
+|  名称 | 总用例数 | 执行成功用例个数 | 执行失败用例个数 | 通过用例个数 | 错误信息匹配用例个数 | 通过率 | 精度是否达标 |
++-------+----------+------------------+------------------+--------------+----------------------+--------+--------------+
+| cpu_0 |    0     |        0         |        0         |      0       |          -           |   -    |      -       |
++-------+----------+------------------+------------------+--------------+----------------------+--------+--------------+
+[2026-08-20 09:37:28,241] [INFO] [ResultProcess-5] [1887029] [process.py:314]  Total Task: 0, success 0, failed 0
+[2026-08-20 09:37:28,241] [INFO] [ResultProcess-5] [1887029] [process.py:314]  Summary info: acc_pass_result:None	is_acc_dc_pass:None	is_e2e_perf_pass:None	is_benchmark_perf_pass:None	is_device_perf_pass:None	is_device_memory_pass:None	is_memory_check_pass:None .
+[2026-08-20 09:37:32,416] [INFO] [MainProcess] [1882645] [decorators.py:34]  atk task finish. cost time: 50 s
