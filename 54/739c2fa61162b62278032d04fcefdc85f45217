@@ -1,0 +1,57 @@
+fla/ops/ascendc/gdn/chunk_gdn_bwd/chunk_bwd_dqkwg/tests/ATK/executor_chunk_bwd_dqkwg.py
+  h_0b241a6196643c 11,211-228,230-231,234-236,317,327-330
+  s_143f7ba3a17393::t_ac2cee241a2560 229
+tests/atk/run_test_cpu.sh
+  h_0b241a6196643c 94
+  s_00aaaa3fcfd724::t_1195d7584f01c2 250,270,286,301
+  s_00aaaa3fcfd724::t_bf477fa8ef7319 180-186
+fla/ops/ascendc/gdn/chunk_gdn_bwd/chunk_bwd_dqkwg/tests/ATK/all_aclnn_chunk_bwd_dqkwg.json
+  h_0b241a6196643c 197
+tests/atk/chunk_bwd_dqkwg/executor_chunk_bwd_dqkwg.py
+  h_0b241a6196643c 14
+  s_00aaaa3fcfd724::t_82cf86168b4819 3-4,11,13,29-41,47-51,53-56,60,63,69-70,74-75,179-180,211-231,233-237,239,245,252,292,294-296,298-299,301,317,327-330
+tests/atk/chunk_bwd_dqkwg/atk_chunk_bwd_dqkwg_bak.json
+  s_143f7ba3a17393::t_56e93bc6c18201 1-247
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "54739c2fa61162b62278032d04fcefdc85f45217",
+  "prompts": {},
+  "humans": {
+    "h_0b241a6196643c": {
+      "author": "alvazu <x@wire.me>"
+    }
+  },
+  "sessions": {
+    "s_00aaaa3fcfd724": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a856fcc2c5562abd3cf7fe7",
+        "model": "glm-5.2"
+      },
+      "human_author": "alvazu <x@wire.me>",
+      "custom_attributes": {
+        "tool_use_id": "6a866675df5a1eca9b5e4622",
+        "runtime_client": "trae-tob-git-ai",
+        "tool_id": "icube:applyChatSnapshotPatch",
+        "tool_type": "builtin",
+        "edit_kind": "file_edit",
+        "dedupe_key": "6a856fcc2c5562abd3cf7fe7:6a866675df5a1eca9b5e4622:afterEdit:e705762e",
+        "session_id": "6a856fcc2c5562abd3cf7fe7",
+        "source_scene": "agent",
+        "client_type": "ide",
+        "external_session_id": "6a856fcc2c5562abd3cf7fe7",
+        "operation_id": "6a866675df5a1eca9b5e4622"
+      }
+    },
+    "s_143f7ba3a17393": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a8449ea0ffe1fd9e00e952c",
+        "model": "DeepSeek-V4-Flash__max"
+      },
+      "human_author": "alvazu <x@wire.me>"
+    }
+  }
+}
