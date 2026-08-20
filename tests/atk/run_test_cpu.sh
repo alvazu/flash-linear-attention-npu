@@ -67,6 +67,11 @@ should_run() {
     [[ "$RUN_SCOPE" == "gen_cases" ]]
     return
   fi
+  # performance 不包含在 all 中，需单独指定 -scope=performance
+  if [[ "$stage" == "performance" ]]; then
+    [[ "$RUN_SCOPE" == "performance" ]]
+    return
+  fi
   [[ "$RUN_SCOPE" == "all" || "$RUN_SCOPE" == "$stage" ]]
 }
 
@@ -91,7 +96,7 @@ CASE_START="${CASE_START:-}"
 CASE_END="${CASE_END:-}"
 MSS_TOOL="${MSS_TOOL:-memcheck}"
 MSS_LOG_PATH="${MSS_LOG_PATH:-/home/huangjunzhe/gdn/github/alvazu-atk/flash-linear-attention-npu/fla/ops/ascendc/gdn/chunk_gdn_bwd/chunk_bwd_dqkwg/tests/ATK/log.txt}"
-GEN_CASES_DTYPE_NUMBERS="${GEN_CASES_DTYPE_NUMBERS:-70}"
+GEN_CASES_DTYPE_NUMBERS="${GEN_CASES_DTYPE_NUMBERS:-100}"
 GEN_CASES_EXTRA_NUMBERS="${GEN_CASES_EXTRA_NUMBERS:-0}"
 GEN_CASES_SEED="${GEN_CASES_SEED:-20260813}"
 
