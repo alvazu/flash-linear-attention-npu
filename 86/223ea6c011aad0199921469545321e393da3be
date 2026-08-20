@@ -1,0 +1,49 @@
+tests/atk/run_test_cpu.sh
+  s_4282da12b002e5::t_e24ab467d3781f 70-74
+  h_0b241a6196643c 99
+tests/atk/chunk_bwd_dqkwg/chunk_bwd_dqkwg.yaml
+  h_0b241a6196643c 12,27-30,45-49,64-68,73,83-86,101-105,120-123,138-142,157-161,169,176-177,185,192-194,209-213,228-229,237
+  s_c23b0a5fb090fd::t_513aff64f0775c 20,25,38,43,57,62,76,81,94,99,113,118,131,136,150,155,174,190,202,207,221,226
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "86223ea6c011aad0199921469545321e393da3be",
+  "prompts": {},
+  "humans": {
+    "h_0b241a6196643c": {
+      "author": "alvazu <x@wire.me>"
+    }
+  },
+  "sessions": {
+    "s_4282da12b002e5": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a83c74e2c5562abd3cf79aa",
+        "model": "glm-5.2"
+      },
+      "human_author": "alvazu <x@wire.me>",
+      "custom_attributes": {
+        "dedupe_key": "6a83c74e2c5562abd3cf79aa:6a86b899df5a1eca9b5e463c:afterEdit:e705762e",
+        "source_scene": "agent",
+        "session_id": "6a83c74e2c5562abd3cf79aa",
+        "edit_kind": "file_edit",
+        "tool_id": "icube:applyChatSnapshotPatch",
+        "tool_use_id": "6a86b899df5a1eca9b5e463c",
+        "external_session_id": "6a83c74e2c5562abd3cf79aa",
+        "client_type": "ide",
+        "tool_type": "builtin",
+        "operation_id": "6a86b899df5a1eca9b5e463c",
+        "runtime_client": "trae-tob-git-ai"
+      }
+    },
+    "s_c23b0a5fb090fd": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a83b5d83247d272b59c3c57",
+        "model": "deepseek-V4-Pro__dev"
+      },
+      "human_author": "alvazu <x@wire.me>"
+    }
+  }
+}
