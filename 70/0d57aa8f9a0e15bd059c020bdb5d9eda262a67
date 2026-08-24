@@ -1,0 +1,43 @@
+tests/atk/run_test_cpu.sh
+  s_ab05c3a6097ca2::t_06444b7dfadf09 401,408-409
+  s_ab05c3a6097ca2::t_35d2a513651554 28-29
+  s_ab05c3a6097ca2::t_908319044c4534 193-194
+tests/atk/README.md
+  s_ab05c3a6097ca2::t_d6c2dd9803e4a4 78-79
+  h_0b241a6196643c 34,69,95,101,129,172,180
+  s_ab05c3a6097ca2::t_04babf4cdb0adf 80-82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "700d57aa8f9a0e15bd059c020bdb5d9eda262a67",
+  "prompts": {},
+  "humans": {
+    "h_0b241a6196643c": {
+      "author": "alvazu <x@wire.me>"
+    }
+  },
+  "sessions": {
+    "s_ab05c3a6097ca2": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a86ec0fdf5a1eca9b5e475b",
+        "model": "glm-5.2"
+      },
+      "human_author": "alvazu <x@wire.me>",
+      "custom_attributes": {
+        "client_type": "ide",
+        "tool_id": "icube:applyChatSnapshotPatch",
+        "tool_type": "builtin",
+        "tool_use_id": "6a8c378f8c7930dbb145a06c",
+        "runtime_client": "trae-tob-git-ai",
+        "dedupe_key": "6a86ec0fdf5a1eca9b5e475b:6a8c378f8c7930dbb145a06c:afterEdit:f912158b",
+        "edit_kind": "file_edit",
+        "external_session_id": "6a86ec0fdf5a1eca9b5e475b",
+        "source_scene": "agent",
+        "session_id": "6a86ec0fdf5a1eca9b5e475b",
+        "operation_id": "6a8c378f8c7930dbb145a06c"
+      }
+    }
+  }
+}
