@@ -1,0 +1,89 @@
+tests/atk/chunk_bwd_dqkwg/atk_chunk_bwd_dqkwg.json
+  h_0b241a6196643c 1
+tests/atk/run_test_cpu.sh
+  s_ab05c3a6097ca2::t_c24237b6c1084f 362,374
+  s_ab05c3a6097ca2::t_438eb624aa13d2 58-59,62-69,74-78,80-82,84-88
+  s_32a4ab7d90364c::t_9442d006d6dfc4 413
+  s_ab05c3a6097ca2::t_a6b504cbb6cd2c 35
+  s_ab05c3a6097ca2::t_15d7a13f1f2a80 187-189,195
+  s_ab05c3a6097ca2::t_512f80b24e7c22 344,347-348
+  s_ab05c3a6097ca2::t_df8d34868c9c3d 284
+  s_ab05c3a6097ca2::t_3136ce31c4bea6 335-337
+  s_ab05c3a6097ca2::t_181ac565dd9706 282
+  s_ab05c3a6097ca2::t_0a080a19f2e0f1 377
+  h_0b241a6196643c 414
+  s_ab05c3a6097ca2::t_92704d2da27f14 79,83
+  s_ab05c3a6097ca2::t_fb06676d96f2c2 426
+  s_ab05c3a6097ca2::t_5b214f4f8ee11d 432-434
+  s_ab05c3a6097ca2::t_c51e5705bb4122 430-431
+  s_ab05c3a6097ca2::t_86fbecd62fd700 14-15,17-18,25-26,42,44
+  s_ab05c3a6097ca2::t_a9df633b74e2a0 60-61,70-73,89-91
+  s_ab05c3a6097ca2::t_456245230b1899 129-182
+  s_ab05c3a6097ca2::t_ab75a295f96f79 406
+  s_ab05c3a6097ca2::t_a91c1ec3d3acf9 312-322
+tests/atk/chunk_bwd_dqkwg/executor_chunk_bwd_dqkwg.py
+  h_0b241a6196643c 13,186,210,232,300-307
+tests/atk/common/check_atk_result.py
+  s_ab05c3a6097ca2::t_808fba2f6c1dd8 283
+  s_ab05c3a6097ca2::t_9068c34f55173c 155-161
+  s_ab05c3a6097ca2::t_cedc6e40a79552 272-273,276
+  s_ab05c3a6097ca2::t_1e36b75e3f337a 1-112,118-154,162-271,274-275,277-278,289-294
+  s_ab05c3a6097ca2::t_63c12decb9704e 113-117
+  s_ab05c3a6097ca2::t_2d917894baf0cd 279-282,284-288
+tests/atk/chunk_bwd_dqkwg/chunk_bwd_dqkwg.yaml
+  h_0b241a6196643c 237
+tests/atk/README.md
+  s_ab05c3a6097ca2::t_87e52d8fb5b980 80
+  s_ab05c3a6097ca2::t_76ecc562e7dd00 63-65,74-76
+  s_ab05c3a6097ca2::t_af7c6b48b00c3d 99-100
+  s_ab05c3a6097ca2::t_0f810ffe636156 97
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "a9a0d9504afbcb9e59638c0e78cdf576908bd7c4",
+  "prompts": {},
+  "humans": {
+    "h_0b241a6196643c": {
+      "author": "alvazu <x@wire.me>"
+    }
+  },
+  "sessions": {
+    "s_32a4ab7d90364c": {
+      "agent_id": {
+        "tool": "trae-code-edit",
+        "id": "ai_tab-202608241454010100002381567881D73",
+        "model": "default"
+      },
+      "human_author": "alvazu <x@wire.me>",
+      "custom_attributes": {
+        "client_type": "ide",
+        "edit_kind": "file_edit",
+        "tool": "trae-code-edit",
+        "source_scene": "cue",
+        "external_session_id": "202608241454010100002381567881D73"
+      }
+    },
+    "s_ab05c3a6097ca2": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a86ec0fdf5a1eca9b5e475b",
+        "model": "glm-5.2"
+      },
+      "human_author": "alvazu <x@wire.me>",
+      "custom_attributes": {
+        "external_session_id": "6a86ec0fdf5a1eca9b5e475b",
+        "session_id": "6a86ec0fdf5a1eca9b5e475b",
+        "tool_id": "icube:applyChatSnapshotPatch",
+        "dedupe_key": "6a86ec0fdf5a1eca9b5e475b:6a8bfedb8c7930dbb145a019:afterEdit:e705762e",
+        "runtime_client": "trae-tob-git-ai",
+        "source_scene": "agent",
+        "operation_id": "6a8bfedb8c7930dbb145a019",
+        "client_type": "ide",
+        "edit_kind": "file_edit",
+        "tool_type": "builtin",
+        "tool_use_id": "6a8bfedb8c7930dbb145a019"
+      }
+    }
+  }
+}
