@@ -25,6 +25,8 @@ show_usage() {
   NPU_BACKEND                    ATK NPU 后端，默认 npu；可手动指定为 pyaclnn 等
   ATK_GM_INIT_MODE               GM 数据初始化模式，默认 auto；auto 下 A5 关闭、A2/A3 开启；可设 on/off
   ATK_TIMEOUT                    精度阶段超时，默认 14400
+  DC_LOOP_NUMS                   确定性循环次数，默认 10（ATK 原默认 50，过大会导致超时）
+  DC_TIMEOUT                    确定性阶段超时，默认 3600
   PERFORMANCE_TIMEOUT            性能阶段超时，默认 2000
   CASE_START/CASE_END            通用 case 顺序范围；不设置时不传 -s/-e，ATK 执行全部用例
   ACCURACY_START/ACCURACY_END    精度与 NaN 检测 case 范围
@@ -188,6 +190,8 @@ NPU_BACKEND="${NPU_BACKEND:-npu}"
 ATK_GM_INIT_MODE="${ATK_GM_INIT_MODE:-auto}"
 REQUIRED_ATK_VERSION="${REQUIRED_ATK_VERSION:-26.7.8}"
 ATK_TIMEOUT="${ATK_TIMEOUT:-14400}"
+DC_LOOP_NUMS="${DC_LOOP_NUMS:-10}"
+DC_TIMEOUT="${DC_TIMEOUT:-3600}"
 PERFORMANCE_TIMEOUT="${PERFORMANCE_TIMEOUT:-2000}"
 CASE_START="${CASE_START:-}"
 CASE_END="${CASE_END:-}"
@@ -394,13 +398,15 @@ if should_run performance; then
 fi
 
 if should_run determinism; then
-  log_info "开始确定性测试：accuracy_dc"
+  log_info "开始确定性测试：accuracy_dc（循环次数=${DC_LOOP_NUMS}，超时=${DC_TIMEOUT}s）"
   set_case_range_args "确定性测试 case 范围" "$DETERMINISM_START" "$DETERMINISM_END"
   "$ATK_BIN" node --name npu_dut --backend "$NPU_BACKEND" --devices "$NPU_DEVICE_ID" \
     task \
       -c "atk_${OP}.json" \
       -p "executor_${OP}.py" \
       --task accuracy_dc \
+      --dc_loop_nums "$DC_LOOP_NUMS" \
+      -to "$DC_TIMEOUT" \
       "${CASE_RANGE_ARGS[@]}"
   log_info "完成确定性测试"
   record_ran_type determinism
