@@ -60,6 +60,9 @@ npu-smi info
 如果环境需要仓内 Python 包路径，请在调用脚本前自行设置。`run_test_cpu.sh` 不会修改
 `PYTHONPATH`。
 
+脚本启动时会校验 ATK 版本不低于 `26.7.8`（由 `REQUIRED_ATK_VERSION` 控制），低于该版本
+直接退出；请确保 `atk --version` 输出的版本号满足要求。
+
 可选环境变量：
 
 | 变量 | 说明 |
@@ -68,10 +71,13 @@ npu-smi info
 | `CANN_ENV` | CANN `set_env.sh` 路径；设置后脚本会 source |
 | `FLA_NPU_ENV` | `fla_npu_transformer` 的 `set_env.bash` 路径；设置后脚本会 source |
 | `ATK_OUTPUT_ROOT` | ATK 输出根目录，默认是算子目录下的 `./atk_output` |
+| `NPU_BACKEND` | ATK NPU 后端类型，默认 `npu`；需要时可手动指定为 `pyaclnn` 等 |
+| `ATK_GM_INIT_MODE` | GM 数据初始化模式，默认 `auto`；`auto` 下 A5 关闭、A2/A3 开启；可设 `on/off` 强制 |
+| `REQUIRED_ATK_VERSION` | ATK 最低版本要求，默认 `26.7.8`；一般无需修改 |
 | `ATK_TIMEOUT` | 精度阶段超时时间，默认 `14400` |
 | `PERFORMANCE_TIMEOUT` | 性能阶段超时时间，默认 `2000` |
 | `MSS_TOOL` | mssanitizer 工具，默认 `memcheck` |
-| `MSS_LOG_PATH` | ATK `-msl` 日志路径；不设置时使用脚本内置路径 |
+| `MSS_LOG_PATH` | ATK `-msl` 日志路径；默认 `${ATK_OUTPUT_ROOT}/mssanitizer_<op>.log` |
 
 ## 统一脚本
 
@@ -88,10 +94,10 @@ bash tests/atk/run_test_cpu.sh -op=<op_name> -npu_device_id=<device_id>
 | `-op=<op_name>` | `tests/atk` 下的算子目录名 |
 | `-npu_device_id=<id>` | 传给 `atk node --devices` 的 NPU 设备号；`gen_cases` 不需要 |
 | `-scope=<scope>` | 执行动作，支持 `all/accuracy/performance/determinism/mssanitizer/gen_cases` |
-| `-soc=<soc>` | 生成或运行时的 SOC 标识，支持 `ascend910b/A2`、`ascend910_93/A3`、`ascend950/A5` |
+| `-soc=<soc>` | SOC 标识，支持 `ascend910b/A2`、`ascend910_93/A3`、`ascend950/A5`；默认 `auto`，由 `npu-smi` 自动探测 |
 
-`all` 包含 `accuracy`、`performance`、`determinism` 和 `mssanitizer`。`gen_cases` 不在
-`all` 中，必须显式指定。
+`all` 包含 `accuracy`、`determinism` 和 `mssanitizer`，不含 `performance`；性能测试需
+显式指定 `-scope=performance`。`gen_cases` 不在 `all` 中，必须显式指定。
 
 示例：
 
