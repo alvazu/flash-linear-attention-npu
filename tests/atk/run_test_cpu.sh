@@ -25,8 +25,8 @@ show_usage() {
   NPU_BACKEND                    ATK NPU 后端，默认 npu；可手动指定为 pyaclnn 等
   ATK_GM_INIT_MODE               GM 数据初始化模式，默认 auto；auto 下 A5 关闭、A2/A3 开启；可设 on/off
   ATK_TIMEOUT                    精度阶段超时，默认 14400
-  DC_LOOP_NUMS                   确定性循环次数，默认 10（ATK 原默认 50，过大会导致超时）
-  DC_TIMEOUT                    确定性阶段超时，默认 3600
+  DC_LOOP_NUMS                   确定性循环次数，默认 50（与 ATK 一致）
+  DC_TIMEOUT                     确定性阶段超时，默认 3600
   PERFORMANCE_TIMEOUT            性能阶段超时，默认 2000
   CASE_START/CASE_END            通用 case 顺序范围；不设置时不传 -s/-e，ATK 执行全部用例
   ACCURACY_START/ACCURACY_END    精度与 NaN 检测 case 范围
@@ -34,7 +34,7 @@ show_usage() {
   DETERMINISM_START/END          确定性 case 范围
   MSS_START/MSS_END              mssanitizer case 范围
   MSS_TOOL                       mssanitizer 工具，默认 memcheck
-  MSS_LOG_PATH                   ATK -msl 日志路径，默认 ${ATK_OUTPUT_ROOT}/mssanitizer_<op>.log
+  MSS_LOG_PATH                   ATK -msl 日志路径，默认 ${ATK_OUTPUT_ROOT}/mssanitizer_<op>_<时间戳>.log
   GEN_CASES_DTYPE_NUMBERS        生成用例时传给 atk case -dt，默认 100；双 dtype 算子生成 200 条
   GEN_CASES_EXTRA_NUMBERS        生成用例时传给 atk case -en，默认 0
   GEN_CASES_SEED                 生成用例随机种子，默认 20260813
@@ -190,7 +190,7 @@ NPU_BACKEND="${NPU_BACKEND:-npu}"
 ATK_GM_INIT_MODE="${ATK_GM_INIT_MODE:-auto}"
 REQUIRED_ATK_VERSION="${REQUIRED_ATK_VERSION:-26.7.8}"
 ATK_TIMEOUT="${ATK_TIMEOUT:-14400}"
-DC_LOOP_NUMS="${DC_LOOP_NUMS:-10}"
+DC_LOOP_NUMS="${DC_LOOP_NUMS:-50}"
 DC_TIMEOUT="${DC_TIMEOUT:-3600}"
 PERFORMANCE_TIMEOUT="${PERFORMANCE_TIMEOUT:-2000}"
 CASE_START="${CASE_START:-}"
@@ -336,9 +336,9 @@ MSS_END="${MSS_END:-$CASE_END}"
 cd "$OP_DIR"
 ATK_OUTPUT_ROOT="${ATK_OUTPUT_ROOT:-./atk_output}"
 mkdir -p "${ATK_OUTPUT_ROOT}/cpu_dual_reference" "${ATK_OUTPUT_ROOT}/perf"
-# mssanitizer 日志路径：未显式指定时使用 ATK_OUTPUT_ROOT 下的绝对路径
+# mssanitizer 日志路径：未显式指定时使用 ATK_OUTPUT_ROOT 下的带时间戳绝对路径
 # ATK celery worker 工作目录与脚本不同，必须用绝对路径，否则无法找到日志文件
-MSS_LOG_PATH="${MSS_LOG_PATH:-$(cd "${ATK_OUTPUT_ROOT}" && pwd)/mssanitizer_${OP}.log}"
+MSS_LOG_PATH="${MSS_LOG_PATH:-$(cd "${ATK_OUTPUT_ROOT}" && pwd)/mssanitizer_${OP}_$(date +%Y%m%d_%H%M%S).log}"
 
 log_info "算子：${OP}"
 log_info "SOC：${SOC}"
@@ -416,9 +416,8 @@ if should_run mssanitizer; then
   command -v mssanitizer >/dev/null 2>&1 || die "找不到 mssanitizer，请先加载支持 sanitizer 的 CANN/调试环境"
   log_info "开始内存检测：mssanitizer ${MSS_TOOL}"
   log_info "ATK mssanitizer 日志：${MSS_LOG_PATH}"
-  rm -f "$MSS_LOG_PATH"
-  touch "$MSS_LOG_PATH"
   set_case_range_args "内存检测 case 范围" "$MSS_START" "$MSS_END"
+  touch "$MSS_LOG_PATH"
   mssanitizer --tool="$MSS_TOOL" -- \
     "$ATK_BIN" node --name npu_dut --backend "$NPU_BACKEND" --devices "$NPU_DEVICE_ID" \
     task \

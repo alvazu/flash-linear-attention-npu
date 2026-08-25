@@ -75,11 +75,11 @@ npu-smi info
 | `ATK_GM_INIT_MODE`     | GM 数据初始化模式，默认`auto`；`auto` 下 A5 关闭、A2/A3 开启；可设 `on/off` 强制 |
 | `REQUIRED_ATK_VERSION` | ATK 最低版本要求，默认`26.7.8`；一般无需修改                                         |
 | `ATK_TIMEOUT`          | 精度阶段超时时间，默认`14400`                                                        |
-| `DC_LOOP_NUMS`         | 确定性循环次数，默认`10`（ATK 原默认 `50`，过大会导致超时）                        |
+| `DC_LOOP_NUMS`         | 确定性循环次数，默认`50`                                              |
 | `DC_TIMEOUT`           | 确定性阶段超时时间，默认`3600`                                                       |
 | `PERFORMANCE_TIMEOUT`  | 性能阶段超时时间，默认`2000`                                                         |
 | `MSS_TOOL`             | mssanitizer 工具，默认`memcheck`                                                     |
-| `MSS_LOG_PATH`         | ATK`-msl` 日志路径；默认 `${ATK_OUTPUT_ROOT}/mssanitizer_<op>.log`                 |
+| `MSS_LOG_PATH`         | ATK`-msl` 日志路径；默认 `${ATK_OUTPUT_ROOT}/mssanitizer_<op>_<时间戳>.log`       |
 
 ## 统一脚本
 
