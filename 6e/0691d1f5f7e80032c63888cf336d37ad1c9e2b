@@ -1,0 +1,14 @@
+tests/atk/chunk_bwd_dqkwg/executor_chunk_bwd_dqkwg.py
+  h_0b241a6196643c 190-192
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "6e0691d1f5f7e80032c63888cf336d37ad1c9e2b",
+  "prompts": {},
+  "humans": {
+    "h_0b241a6196643c": {
+      "author": "alvazu <x@wire.me>"
+    }
+  }
+}
