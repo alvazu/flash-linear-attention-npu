@@ -7,11 +7,11 @@ set -euo pipefail
 show_usage() {
   cat <<'EOF'
 用法：
-  bash tests/atk/run_test_cpu.sh -op=<算子名> -npu_device_id=<NPU卡号>
+  bash tests/atk/run_test_cpu.sh -op=<算子名> [-npu_device_id=<NPU卡号>]
 
 常用参数：
   -op=chunk_kda_fwd              ATK 算子目录名
-  -npu_device_id=6               传给 ATK node --devices 的 NPU 卡号；gen_cases 不需要
+  -npu_device_id=0               传给 ATK node --devices 的 NPU 卡号，默认 0；gen_cases 不需要
   -soc=ascend910b                可选：ascend910b/A2、ascend910_93/A3、ascend950/A5；默认 auto 自动探测
   -scope=all                     可选：all、accuracy、performance、determinism、mssanitizer、gen_cases
                                  all 包含 accuracy/determinism/mssanitizer；
@@ -22,8 +22,7 @@ show_usage() {
   CANN_ENV                       CANN set_env.sh 路径，设置后 source
   FLA_NPU_ENV                    fla_npu_transformer set_env.bash 路径，设置后 source
   ATK_OUTPUT_ROOT                输出根目录，默认 ./atk_output
-  NPU_BACKEND                    ATK NPU 后端，默认 npu；可手动指定为 pyaclnn 等
-  ATK_GM_INIT_MODE               GM 数据初始化模式，默认 auto；auto 下 A5 关闭、A2/A3 开启；可设 on/off
+  ATK_GM_INIT_MODE               GM 数据初始化模式，默认 on；可设 on/off
   ATK_TIMEOUT                    精度阶段超时，默认 14400
   DC_LOOP_NUMS                   确定性循环次数，默认 50（与 ATK 一致）
   DC_TIMEOUT                     确定性阶段超时，默认 3600
@@ -40,11 +39,10 @@ show_usage() {
   GEN_CASES_SEED                 生成用例随机种子，默认 20260813
 
 示例：
-  bash tests/atk/run_test_cpu.sh -op=chunk_kda_fwd -npu_device_id=6
-  bash tests/atk/run_test_cpu.sh -op=chunk_bwd_dqkwg -scope=performance -npu_device_id=6
+  bash tests/atk/run_test_cpu.sh -op=chunk_kda_fwd
+  bash tests/atk/run_test_cpu.sh -op=chunk_bwd_dqkwg -scope=performance
   bash tests/atk/run_test_cpu.sh -op=chunk_bwd_dqkwg -scope=gen_cases
-  NPU_BACKEND=pyaclnn bash tests/atk/run_test_cpu.sh -op=chunk_kda_fwd -npu_device_id=6
-  CASE_START=0 CASE_END=1 bash tests/atk/run_test_cpu.sh -op=chunk_bwd_dqkwg -npu_device_id=6
+  CASE_START=0 CASE_END=1 bash tests/atk/run_test_cpu.sh -op=chunk_bwd_dqkwg
 EOF
 }
 
@@ -158,36 +156,28 @@ check_atk_version() {
   fi
 }
 
-# 根据 ATK_GM_INIT_MODE 与 SOC 解析是否向 ATK 传入 --gm_init_flag。
-# auto（默认）：A5 关闭、A2/A3 开启；on 强制开启；off 强制关闭。
+# 根据 ATK_GM_INIT_MODE 解析是否向 ATK 传入 --gm_init_flag。
+# on（默认）：开启；off：关闭。
 resolve_gm_init_args() {
   local mode="$ATK_GM_INIT_MODE"
   local enable=""
   case "$mode" in
-    auto)
-      if [[ "$SOC" == "ascend950" ]]; then
-        enable="off"
-      else
-        enable="on"
-      fi
-      ;;
     on|enable|true|1) enable="on" ;;
     off|disable|false|0) enable="off" ;;
-    *) die "不支持的 ATK_GM_INIT_MODE：${mode}，请使用 auto/on/off" ;;
+    *) die "不支持的 ATK_GM_INIT_MODE：${mode}，请使用 on/off" ;;
   esac
   GM_INIT_ARGS=()
   if [[ "$enable" == "on" ]]; then
     GM_INIT_ARGS=(--gm_init_flag)
   fi
-  log_info "GM 数据初始化（ATK_GM_INIT_MODE=${mode}，SOC=${SOC}）：${enable}"
+  log_info "GM 数据初始化（ATK_GM_INIT_MODE=${mode}）：${enable}"
 }
 
 OP=""
-NPU_DEVICE_ID="${NPU_DEVICE_ID:-}"
+NPU_DEVICE_ID="${NPU_DEVICE_ID:-0}"
 SOC="${SOC:-auto}"
 RUN_SCOPE="${RUN_SCOPE:-all}"
-NPU_BACKEND="${NPU_BACKEND:-npu}"
-ATK_GM_INIT_MODE="${ATK_GM_INIT_MODE:-auto}"
+ATK_GM_INIT_MODE="${ATK_GM_INIT_MODE:-on}"
 REQUIRED_ATK_VERSION="${REQUIRED_ATK_VERSION:-26.7.8}"
 ATK_TIMEOUT="${ATK_TIMEOUT:-14400}"
 DC_LOOP_NUMS="${DC_LOOP_NUMS:-50}"
@@ -264,9 +254,6 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -n "$OP" ]] || die "必须传入 -op=<算子名>"
-if [[ "$RUN_SCOPE" != "gen_cases" ]]; then
-  [[ -n "$NPU_DEVICE_ID" ]] || die "必须传入 -npu_device_id=<NPU卡号>"
-fi
 
 case "$RUN_SCOPE" in
   all|accuracy|performance|determinism|mssanitizer|gen_cases) ;;
@@ -285,7 +272,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OP_DIR="${SCRIPT_DIR}/${OP}"
 RESULT_CHECK_PY="${SCRIPT_DIR}/common/check_atk_result.py"
 
-# NPU_BACKEND 默认为 npu，可经环境变量手动指定为 pyaclnn 等
+# NPU 后端固定为 npu
 CASE_FILE="${OP_DIR}/atk_${OP}.json"
 EXECUTOR_FILE="${OP_DIR}/executor_${OP}.py"
 YAML_FILE="${OP_DIR}/${OP}.yaml"
@@ -345,7 +332,6 @@ log_info "SOC：${SOC}"
 if [[ "$RUN_SCOPE" != "gen_cases" ]]; then
   log_info "NPU 设备号：${NPU_DEVICE_ID}"
 fi
-log_info "NPU 后端：${NPU_BACKEND}"
 log_info "ATK 路径：${ATK_BIN}"
 log_info "输出根目录：${ATK_OUTPUT_ROOT}"
 check_atk_version
@@ -365,7 +351,7 @@ fi
 if should_run accuracy; then
   log_info "开始精度与 NaN 检测：accuracy + CPU高精度标杆 + CPU同精度标杆 + GM 初始化"
   set_case_range_args "精度与 NaN 检测 case 范围" "$ACCURACY_START" "$ACCURACY_END"
-  "$ATK_BIN" node --name npu_dut --backend "$NPU_BACKEND" --devices "$NPU_DEVICE_ID" \
+  "$ATK_BIN" node --name npu_dut --backend npu --devices "$NPU_DEVICE_ID" \
       --output_path "${ATK_OUTPUT_ROOT}/cpu_dual_reference" \
     node --name cpu_reference --backend cpu \
       --output_path "${ATK_OUTPUT_ROOT}/cpu_dual_reference" \
@@ -384,7 +370,7 @@ fi
 if should_run performance; then
   log_info "开始性能测试：performance_device"
   set_case_range_args "性能测试 case 范围" "$PERFORMANCE_START" "$PERFORMANCE_END"
-  "$ATK_BIN" node --name npu_dut --backend "$NPU_BACKEND" --devices "$NPU_DEVICE_ID" \
+  "$ATK_BIN" node --name npu_dut --backend npu --devices "$NPU_DEVICE_ID" \
       --output_path "${ATK_OUTPUT_ROOT}/perf" \
     task \
       -c "atk_${OP}_perf.json" \
@@ -400,7 +386,7 @@ fi
 if should_run determinism; then
   log_info "开始确定性测试：accuracy_dc（循环次数=${DC_LOOP_NUMS}，超时=${DC_TIMEOUT}s）"
   set_case_range_args "确定性测试 case 范围" "$DETERMINISM_START" "$DETERMINISM_END"
-  "$ATK_BIN" node --name npu_dut --backend "$NPU_BACKEND" --devices "$NPU_DEVICE_ID" \
+  "$ATK_BIN" node --name npu_dut --backend npu --devices "$NPU_DEVICE_ID" \
     task \
       -c "atk_${OP}_mss.json" \
       -p "executor_${OP}.py" \
@@ -419,7 +405,7 @@ if should_run mssanitizer; then
   set_case_range_args "内存检测 case 范围" "$MSS_START" "$MSS_END"
   touch "$MSS_LOG_PATH"
   mssanitizer --tool="$MSS_TOOL" -- \
-    "$ATK_BIN" node --name npu_dut --backend "$NPU_BACKEND" --devices "$NPU_DEVICE_ID" \
+    "$ATK_BIN" node --name npu_dut --backend npu --devices "$NPU_DEVICE_ID" \
     task \
       -c "atk_${OP}_mss.json" \
       -p "executor_${OP}.py" \

@@ -13,7 +13,7 @@ tests/atk/
 |-- common/
 |   |-- _ascendc_common_executor.py
 |   |-- check_atk_result.py
-|   `-- gen_perf_mss_json.py
+|   └-- gen_perf_mss_json.py
 |-- <op_name>/
 |   |-- README.md
 |   |-- atk_<op_name>.json          # 全量用例（精度检测使用）
@@ -22,8 +22,8 @@ tests/atk/
 |   |-- <op_name>.yaml
 |   |-- gen_<op_name>.py
 |   |-- scripts/
-|   |   `-- <本算子专用脚本>
-|   `-- executor_<op_name>.py
+|   |   └-- <本算子专用脚本>
+|   └-- executor_<op_name>.py
 ```
 
 每个算子目录保留 `scripts/`，用于本算子专属杂项脚本、分析脚本或 CPU 标杆。当前除
@@ -42,9 +42,9 @@ ATK 运行产生的 `atk_output/`、`result/`、profiling、sanitizer 日志、X
 | `<op>/gen_<op>.py`                   | 本算子的 ATK 泛化用例生成器                                                              |
 | `<op>/scripts/`                      | 本算子专用的杂项脚本、分析脚本或辅助标杆，不放跨算子公共逻辑                             |
 | `<op>/<op>.yaml`                     | ATK case 生成配置，shape 与 dtype 必须符合算子 README 和 tiling 限制                     |
-| `<op>/atk_<op>.json`                 | 全量 ATK 执行用例，精度检测使用                                                           |
-| `<op>/atk_<op>_perf.json`            | 性能精简用例（模型 case）                 |
-| `<op>/atk_<op>_mss.json`             | 内存检测与确定性精简用例（需覆盖所有 tilingKey） |
+| `<op>/atk_<op>.json`                 | 全量 ATK 执行用例，精度检测使用                                                          |
+| `<op>/atk_<op>_perf.json`            | 性能精简用例（模型 case）                                                                |
+| `<op>/atk_<op>_mss.json`             | 内存检测与确定性精简用例（需覆盖所有 tilingKey）                                         |
 | `<op>/README.md`                     | 本算子的输入限制、标杆来源、SOC 支持和执行示例                                           |
 
 `common/` 只放跨算子复用的基础函数。具体 CPU 标杆、`run_cpu`、`run_npu`、输入生成和
@@ -77,22 +77,21 @@ npu-smi info
 | `CANN_ENV`             | CANN`set_env.sh` 路径；设置后脚本会 source                                           |
 | `FLA_NPU_ENV`          | `fla_npu_transformer` 的 `set_env.bash` 路径；设置后脚本会 source                  |
 | `ATK_OUTPUT_ROOT`      | ATK 输出根目录，默认是算子目录下的`./atk_output`                                     |
-| `NPU_BACKEND`          | ATK NPU 后端类型，默认`npu`；需要时可手动指定为 `pyaclnn` 等                       |
-| `ATK_GM_INIT_MODE`     | GM 数据初始化模式，默认`auto`；`auto` 下 A5 关闭、A2/A3 开启；可设 `on/off` 强制 |
+| `ATK_GM_INIT_MODE`     | GM 数据初始化模式，默认`on`；可设 `on/off`                                        |
 | `REQUIRED_ATK_VERSION` | ATK 最低版本要求，默认`26.7.8`；一般无需修改                                         |
 | `ATK_TIMEOUT`          | 精度阶段超时时间，默认`14400`                                                        |
-| `DC_LOOP_NUMS`         | 确定性循环次数，默认`50`                                              |
+| `DC_LOOP_NUMS`         | 确定性循环次数，默认`50`                                                             |
 | `DC_TIMEOUT`           | 确定性阶段超时时间，默认`3600`                                                       |
 | `PERFORMANCE_TIMEOUT`  | 性能阶段超时时间，默认`2000`                                                         |
 | `MSS_TOOL`             | mssanitizer 工具，默认`memcheck`                                                     |
-| `MSS_LOG_PATH`         | ATK`-msl` 日志路径；默认 `${ATK_OUTPUT_ROOT}/mssanitizer_<op>_<时间戳>.log`       |
+| `MSS_LOG_PATH`         | ATK`-msl` 日志路径；默认 `${ATK_OUTPUT_ROOT}/mssanitizer_<op>_<时间戳>.log`        |
 
 ## 统一脚本
 
 基本用法：
 
 ```bash
-bash tests/atk/run_test_cpu.sh -op=<op_name> -npu_device_id=<device_id>
+bash tests/atk/run_test_cpu.sh -op=<op_name>
 ```
 
 常用参数：
@@ -100,7 +99,7 @@ bash tests/atk/run_test_cpu.sh -op=<op_name> -npu_device_id=<device_id>
 | 参数                    | 说明                                                                                                           |
 | ----------------------- | -------------------------------------------------------------------------------------------------------------- |
 | `-op=<op_name>`       | `tests/atk` 下的算子目录名                                                                                   |
-| `-npu_device_id=<id>` | 传给`atk node --devices` 的 NPU 设备号；`gen_cases` 不需要                                                 |
+| `-npu_device_id=<id>` | 传给`atk node --devices` 的 NPU 设备号，默认`0`；`gen_cases` 不需要                                       |
 | `-scope=<scope>`      | 执行动作，支持`all/accuracy/performance/determinism/mssanitizer/gen_cases`                                   |
 | `-soc=<soc>`          | SOC 标识，支持`ascend910b/A2`、`ascend910_93/A3`、`ascend950/A5`；默认 `auto`，由 `npu-smi` 自动探测 |
 
@@ -110,11 +109,11 @@ bash tests/atk/run_test_cpu.sh -op=<op_name> -npu_device_id=<device_id>
 示例：
 
 ```bash
-bash tests/atk/run_test_cpu.sh -op=causal_conv1d -npu_device_id=6
-bash tests/atk/run_test_cpu.sh -op=causal_conv1d -npu_device_id=6 -scope=accuracy
-bash tests/atk/run_test_cpu.sh -op=causal_conv1d -npu_device_id=6 -scope=performance
-bash tests/atk/run_test_cpu.sh -op=causal_conv1d -npu_device_id=6 -scope=determinism
-bash tests/atk/run_test_cpu.sh -op=causal_conv1d -npu_device_id=6 -scope=mssanitizer
+bash tests/atk/run_test_cpu.sh -op=causal_conv1d
+bash tests/atk/run_test_cpu.sh -op=causal_conv1d -scope=accuracy
+bash tests/atk/run_test_cpu.sh -op=causal_conv1d -scope=performance
+bash tests/atk/run_test_cpu.sh -op=causal_conv1d -scope=determinism
+bash tests/atk/run_test_cpu.sh -op=causal_conv1d -scope=mssanitizer
 bash tests/atk/run_test_cpu.sh -op=causal_conv1d -scope=gen_cases
 ```
 
@@ -126,7 +125,7 @@ bash tests/atk/run_test_cpu.sh -op=causal_conv1d -scope=gen_cases
 
 ```bash
 CASE_START=0 CASE_END=1 \
-bash tests/atk/run_test_cpu.sh -op=causal_conv1d -npu_device_id=6
+bash tests/atk/run_test_cpu.sh -op=causal_conv1d
 ```
 
 也可以按动作单独设置范围：
@@ -145,25 +144,25 @@ bash tests/atk/run_test_cpu.sh -op=causal_conv1d -npu_device_id=6
 精度与 NaN 检测使用本机 NPU DUT 和本机 CPU reference 两个 ATK node：
 
 ```bash
-bash tests/atk/run_test_cpu.sh -op=<op_name> -npu_device_id=<device_id> -scope=accuracy
+bash tests/atk/run_test_cpu.sh -op=<op_name> -scope=accuracy
 ```
 
 性能测试使用 ATK `performance_device`：
 
 ```bash
-bash tests/atk/run_test_cpu.sh -op=<op_name> -npu_device_id=<device_id> -scope=performance
+bash tests/atk/run_test_cpu.sh -op=<op_name> -scope=performance
 ```
 
 确定性验证使用 ATK `accuracy_dc`：
 
 ```bash
-bash tests/atk/run_test_cpu.sh -op=<op_name> -npu_device_id=<device_id> -scope=determinism
+bash tests/atk/run_test_cpu.sh -op=<op_name> -scope=determinism
 ```
 
 内存检测由 `mssanitizer` 包裹 ATK `run` 任务：
 
 ```bash
-bash tests/atk/run_test_cpu.sh -op=<op_name> -npu_device_id=<device_id> -scope=mssanitizer
+bash tests/atk/run_test_cpu.sh -op=<op_name> -scope=mssanitizer
 ```
 
 用例生成通过 ATK `case` 执行：
