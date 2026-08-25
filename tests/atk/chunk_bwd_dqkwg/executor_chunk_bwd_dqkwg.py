@@ -187,6 +187,9 @@ class FunctionApi(BaseApi):
 
         return dq, dk, dw_out, dg
 
+
+
+
     def cpu_benchmark(self, input_data: InputDataset, with_output: bool = False):
         q = input_data.kwargs["q"].to(torch.float64)
         k = input_data.kwargs["k"].to(torch.float64)
