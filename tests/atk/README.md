@@ -11,10 +11,14 @@ tests/atk/
 |-- README.md
 |-- run_test_cpu.sh
 |-- common/
-|   `-- _ascendc_common_executor.py
+|   |-- _ascendc_common_executor.py
+|   |-- check_atk_result.py
+|   `-- gen_perf_mss_json.py
 |-- <op_name>/
 |   |-- README.md
-|   |-- atk_<op_name>.json
+|   |-- atk_<op_name>.json          # 全量用例（精度检测使用）
+|   |-- atk_<op_name>_perf.json     # 性能精简用例（模型 case）
+|   |-- atk_<op_name>_mss.json      # 内存检测精简用例（需覆盖所有 tilingKey）
 |   |-- <op_name>.yaml
 |   |-- gen_<op_name>.py
 |   |-- scripts/
@@ -38,7 +42,9 @@ ATK 运行产生的 `atk_output/`、`result/`、profiling、sanitizer 日志、X
 | `<op>/gen_<op>.py`                   | 本算子的 ATK 泛化用例生成器                                                              |
 | `<op>/scripts/`                      | 本算子专用的杂项脚本、分析脚本或辅助标杆，不放跨算子公共逻辑                             |
 | `<op>/<op>.yaml`                     | ATK case 生成配置，shape 与 dtype 必须符合算子 README 和 tiling 限制                     |
-| `<op>/atk_<op>.json`                 | 已评审的 ATK 执行用例                                                                    |
+| `<op>/atk_<op>.json`                 | 全量 ATK 执行用例，精度检测使用                                                           |
+| `<op>/atk_<op>_perf.json`            | 性能精简用例（模型 case）                 |
+| `<op>/atk_<op>_mss.json`             | 内存检测与确定性精简用例（需覆盖所有 tilingKey） |
 | `<op>/README.md`                     | 本算子的输入限制、标杆来源、SOC 支持和执行示例                                           |
 
 `common/` 只放跨算子复用的基础函数。具体 CPU 标杆、`run_cpu`、`run_npu`、输入生成和
@@ -202,11 +208,12 @@ bash tests/atk/run_test_cpu.sh -op=<op_name> -scope=gen_cases
 新增算子工程时按以下顺序处理：
 
 1. 在 `tests/atk/<op_name>/` 下放置 `README.md`、`atk_<op_name>.json`、`<op_name>.yaml`、`gen_<op_name>.py`、`executor_<op_name>.py` 和 `scripts/`。
-2. 在算子 README 中写清输入 shape、dtype、属性、可选输入、变长元数据和 tiling 限制。
-3. `executor_<op_name>.py` 中保留本算子的 `build_inputs`、CPU 标杆、`run_cpu`、`run_npu` 和 `FunctionApi`。
-4. 若需要公共基础函数，从 `tests/atk/common/_ascendc_common_executor.py` 引入；不要把算子专属逻辑放入 `common/`。
-5. YAML 与 JSON 中的 shape 必须同时满足源码 README、tiling 检查和 executor 输入构造。
-6. 修改后至少执行 `python` 语法导入检查；具备 NPU 环境时再跑 `accuracy`、`performance`、`determinism` 和 `mssanitizer`。
+2. `atk_<op_name>_perf.json` 和 `atk_<op_name>_mss.json`；`_mss.json` 需根据 tilingKey 和模型 shape 手工补齐。
+3. 在算子 README 中写清输入 shape、dtype、属性、可选输入、变长元数据和 tiling 限制。
+4. `executor_<op_name>.py` 中保留本算子的 `build_inputs`、CPU 标杆、`run_cpu`、`run_npu` 和 `FunctionApi`。
+5. 若需要公共基础函数，从 `tests/atk/common/_ascendc_common_executor.py` 引入；不要把算子专属逻辑放入 `common/`。
+6. YAML 与 JSON 中的 shape 必须同时满足源码 README、tiling 检查和 executor 输入构造。
+7. 修改后至少执行 `python` 语法导入检查；具备 NPU 环境时再跑 `accuracy`、`performance`、`determinism` 和 `mssanitizer`。
 
 executor 使用公共目录的推荐写法：
 

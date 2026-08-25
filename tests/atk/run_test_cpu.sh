@@ -387,7 +387,7 @@ if should_run performance; then
   "$ATK_BIN" node --name npu_dut --backend "$NPU_BACKEND" --devices "$NPU_DEVICE_ID" \
       --output_path "${ATK_OUTPUT_ROOT}/perf" \
     task \
-      -c "atk_${OP}.json" \
+      -c "atk_${OP}_perf.json" \
       --task performance_device \
       -p "executor_${OP}.py" \
       "${CASE_RANGE_ARGS[@]}" \
@@ -402,7 +402,7 @@ if should_run determinism; then
   set_case_range_args "确定性测试 case 范围" "$DETERMINISM_START" "$DETERMINISM_END"
   "$ATK_BIN" node --name npu_dut --backend "$NPU_BACKEND" --devices "$NPU_DEVICE_ID" \
     task \
-      -c "atk_${OP}.json" \
+      -c "atk_${OP}_mss.json" \
       -p "executor_${OP}.py" \
       --task accuracy_dc \
       --dc_loop_nums "$DC_LOOP_NUMS" \
@@ -421,7 +421,7 @@ if should_run mssanitizer; then
   mssanitizer --tool="$MSS_TOOL" -- \
     "$ATK_BIN" node --name npu_dut --backend "$NPU_BACKEND" --devices "$NPU_DEVICE_ID" \
     task \
-      -c "atk_${OP}.json" \
+      -c "atk_${OP}_mss.json" \
       -p "executor_${OP}.py" \
       --task run \
       --mssanitizer \
