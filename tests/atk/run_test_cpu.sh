@@ -383,8 +383,6 @@ if should_run performance; then
   log_info "完成性能测试"
 fi
 
-
-
 if should_run determinism; then
   log_info "开始确定性测试：accuracy_dc（循环次数=${DC_LOOP_NUMS}，超时=${DC_TIMEOUT}s）"
   set_case_range_args "确定性测试 case 范围" "$DETERMINISM_START" "$DETERMINISM_END"
