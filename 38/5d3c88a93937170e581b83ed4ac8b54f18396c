@@ -1,0 +1,14 @@
+tests/atk/run_test_cpu.sh
+  h_0b241a6196643c 386-387
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "385d3c88a93937170e581b83ed4ac8b54f18396c",
+  "prompts": {},
+  "humans": {
+    "h_0b241a6196643c": {
+      "author": "alvazu <x@wire.me>"
+    }
+  }
+}
