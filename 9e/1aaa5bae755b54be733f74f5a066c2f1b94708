@@ -1,0 +1,52 @@
+tests/atk/README.md
+  s_ab05c3a6097ca2::t_e46e45b99f97c8 147,153,159,165
+  s_ab05c3a6097ca2::t_64b36b175cd3fb 112-116
+  s_ab05c3a6097ca2::t_dc26d7296c929f 102
+  h_0b241a6196643c 16,25-26
+  s_ab05c3a6097ca2::t_157d67b8306fcd 80
+  s_ab05c3a6097ca2::t_f05bdc0b0333af 128
+  s_ab05c3a6097ca2::t_6d2860812a511b 94
+tests/atk/run_test_cpu.sh
+  s_ab05c3a6097ca2::t_1e55a3a204c867 389
+  s_ab05c3a6097ca2::t_484070421b19ab 275
+  s_ab05c3a6097ca2::t_a7864ec7032c10 408
+  s_ab05c3a6097ca2::t_f34935dc33f2f6 373
+  s_ab05c3a6097ca2::t_e08653c8f45341 10,14,25,42-43,45
+  s_ab05c3a6097ca2::t_b0a95be5fe5a7f 159-160,167,173
+  s_ab05c3a6097ca2::t_f0a5a4aa2bc210 177,180
+  s_ab05c3a6097ca2::t_24ae18fcf1ea40 354
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "9e1aaa5bae755b54be733f74f5a066c2f1b94708",
+  "prompts": {},
+  "humans": {
+    "h_0b241a6196643c": {
+      "author": "alvazu <x@wire.me>"
+    }
+  },
+  "sessions": {
+    "s_ab05c3a6097ca2": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a86ec0fdf5a1eca9b5e475b",
+        "model": "glm-5.2"
+      },
+      "human_author": "alvazu <x@wire.me>",
+      "custom_attributes": {
+        "operation_id": "6a8d3a0d8c7930dbb145a156",
+        "runtime_client": "trae-tob-git-ai",
+        "dedupe_key": "6a86ec0fdf5a1eca9b5e475b:6a8d3a0d8c7930dbb145a156:afterEdit:f912158b",
+        "external_session_id": "6a86ec0fdf5a1eca9b5e475b",
+        "tool_type": "builtin",
+        "session_id": "6a86ec0fdf5a1eca9b5e475b",
+        "client_type": "ide",
+        "tool_use_id": "6a8d3a0d8c7930dbb145a156",
+        "source_scene": "agent",
+        "edit_kind": "file_edit",
+        "tool_id": "icube:applyChatSnapshotPatch"
+      }
+    }
+  }
+}
