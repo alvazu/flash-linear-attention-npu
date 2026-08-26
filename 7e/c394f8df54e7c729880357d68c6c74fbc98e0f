@@ -1,0 +1,41 @@
+tests/atk/common/gpu_server.sh
+  s_dc8a118e31fb5d::t_19b26879f5522b 43-47
+  s_dc8a118e31fb5d::t_45959efd3cfc99 161-172
+tests/atk/README.md
+  s_dc8a118e31fb5d::t_8e090ef31eb706 184-188,200-202
+  s_dc8a118e31fb5d::t_1ad006fdcfc845 203
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "7ec394f8df54e7c729880357d68c6c74fbc98e0f",
+  "prompts": {},
+  "humans": {
+    "h_0b241a6196643c": {
+      "author": "alvazu <x@wire.me>"
+    }
+  },
+  "sessions": {
+    "s_dc8a118e31fb5d": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a8ea5b6f47532a51852683a",
+        "model": "glm-5.2"
+      },
+      "human_author": "alvazu <x@wire.me>",
+      "custom_attributes": {
+        "dedupe_key": "6a8ea5b6f47532a51852683a:6a8eaf34f47532a518526a03:afterEdit:f912158b",
+        "tool_type": "builtin",
+        "operation_id": "6a8eaf34f47532a518526a03",
+        "runtime_client": "trae-tob-git-ai",
+        "source_scene": "agent",
+        "tool_id": "icube:applyChatSnapshotPatch",
+        "session_id": "6a8ea5b6f47532a51852683a",
+        "external_session_id": "6a8ea5b6f47532a51852683a",
+        "tool_use_id": "6a8eaf34f47532a518526a03",
+        "client_type": "ide",
+        "edit_kind": "file_edit"
+      }
+    }
+  }
+}
