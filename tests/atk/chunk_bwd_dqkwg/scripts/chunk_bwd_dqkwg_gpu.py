@@ -122,6 +122,20 @@ def chunk_bwd_dqkwg_gpu(
         mmtype = datatype
         print(f"使用 fp32 计算精度，输出精度: {q.dtype}")
 
+    # ------------------------------------------------------------------
+    # 类型转换：与 CPU 标杆完全一致（注意：原 CPU 代码未赋值回变量，
+    # 这里保持同样行为，仅做类型转换调用，不改变原张量）
+    # ------------------------------------------------------------------
+    q = q.to(calc_type)
+    k = k.to(calc_type)
+    v = v.to(calc_type)
+    do = do.to(calc_type)
+    h = h.to(calc_type)
+    dh = dh.to(calc_type)
+    if g is not None:
+        g = g.to(gtype).to(calc_type)
+    dv = dv.to(calc_type)
+
     # 从输入张量推断设备
     device = q.device
 

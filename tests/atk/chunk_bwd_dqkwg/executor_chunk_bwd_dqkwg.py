@@ -338,11 +338,11 @@ class FunctionApi(BaseApi):
         elif self.device == "gpu":
             # GPU 路由：参考 chunk_kda_fwd 的 is_benchmark_task 机制
             # fp64 任务使用 fp64 高精度参考，常规任务使用同精度参考
-            if self.is_benchmark_task or q.dtype == torch.float64:
+            if self.is_benchmark_task or q.dtype == torch.float64 or q.dtype == torch.float32:
                 return self.gpu_fp64(input_data, with_output)
             else:
                 return self.gpu(input_data, with_output)
-        elif q.dtype == torch.float64:
+        elif q.dtype == torch.float64 or q.dtype == torch.float32:
             return self.cpu_fp64(input_data, with_output)
         else:
             return self.cpu(input_data, with_output)
