@@ -1,0 +1,32 @@
+tests/atk/chunk_bwd_dqkwg/scripts/acc.py
+  s_fb9590ea93c84b::t_c86cc14354d4b9 1-234
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "b001f05726eef3d0ab64285959557e2b59320b2f",
+  "prompts": {},
+  "sessions": {
+    "s_fb9590ea93c84b": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a8e6425f47532a518526627",
+        "model": "glm-5.2"
+      },
+      "human_author": "alvazu <x@wire.me>",
+      "custom_attributes": {
+        "edit_kind": "file_edit",
+        "operation_id": "6a8e8ba5f47532a5185266ac",
+        "tool_id": "icube:applyChatSnapshotPatch",
+        "client_type": "ide",
+        "tool_type": "builtin",
+        "session_id": "6a8e6425f47532a518526627",
+        "source_scene": "agent",
+        "runtime_client": "trae-tob-git-ai",
+        "external_session_id": "6a8e6425f47532a518526627",
+        "tool_use_id": "6a8e8ba5f47532a5185266ac",
+        "dedupe_key": "6a8e6425f47532a518526627:6a8e8ba5f47532a5185266ac:afterEdit:0facba36"
+      }
+    }
+  }
+}
