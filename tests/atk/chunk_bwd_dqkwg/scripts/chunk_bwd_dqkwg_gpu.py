@@ -53,54 +53,11 @@ def select_gpu_device(device_id: int = 0) -> torch.device:
     return device
 
 
-def chunk_bwd_dqkwg_gpu(
-    q: torch.Tensor,
-    k: torch.Tensor,
-    v: torch.Tensor,
-    do: torch.Tensor,
-    h: torch.Tensor,
-    dh: torch.Tensor,
-    w: Optional[torch.Tensor],
-    g: Optional[torch.Tensor],
-    dv: torch.Tensor,
-    scale: float,
-    cu_seqlens: Optional[torch.LongTensor],
-    chunk_size: int = 64,
-    fp64: bool = False,
-    device: Optional[Union[int, str, torch.device]] = None,
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
-    """
-    GPU 版本的 chunk_bwd_kernel_dqkwg 标杆实现。
-    使用 GPU 小算子（matmul、exp、where 等）拼接完成完整计算。
-
-    参数:
-        fp64:   当为 True 时使用 fp64 精度小算子拼接；
-                当为 False 时使用与输入数据相同精度的小算子拼接。
-        device: GPU 设备，可传入 int（设备号）、str（如 'cuda:0'）或 torch.device；
-                为 None 时自动选择 cuda:0。
-    """
-    # ------------------------------------------------------------------
-    # GPU 设备选择
-    # ------------------------------------------------------------------
-    if device is None:
-        device = select_gpu_device(0)
-    elif isinstance(device, int):
-        device = select_gpu_device(device)
-    elif isinstance(device, str):
-        device = torch.device(device)
-        if device.type != 'cuda':
-            raise RuntimeError(f"设备类型必须为 cuda，当前为 {device.type}")
-        print(f"已选择 GPU 设备: {device}")
-    elif isinstance(device, torch.device):
-        if device.type != 'cuda':
-            raise RuntimeError(f"设备类型必须为 cuda，当前为 {device.type}")
-        print(f"已选择 GPU 设备: {device}")
-    else:
-        raise RuntimeError(f"不支持的 device 参数类型: {type(device)}")
-
-    # ------------------------------------------------------------------
-    # 将输入张量移动到 GPU
-    # ------------------------------------------------------------------
+def move_tensors_to_device(
+    q, k, v, do, h, dh, w, g, dv, cu_seqlens,
+    device: torch.device
+):
+    """将所有输入张量移动到指定设备。"""
     q = q.to(device)
     k = k.to(device)
     v = v.to(device)
@@ -117,9 +74,40 @@ def chunk_bwd_dqkwg_gpu(
             cu_seqlens = torch.tensor(cu_seqlens, dtype=torch.int64, device=device)
         else:
             cu_seqlens = cu_seqlens.to(device)
+    return q, k, v, do, h, dh, w, g, dv, cu_seqlens
 
+
+def chunk_bwd_dqkwg_gpu(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    do: torch.Tensor,
+    h: torch.Tensor,
+    dh: torch.Tensor,
+    w: Optional[torch.Tensor],
+    g: Optional[torch.Tensor],
+    dv: torch.Tensor,
+    scale: float,
+    cu_seqlens: Optional[torch.LongTensor],
+    chunk_size: int = 64,
+    fp64: bool = False,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
+    """
+    GPU 版本的 chunk_bwd_kernel_dqkwg 标杆实现。
+    使用 GPU 小算子（matmul、exp、where 等）拼接完成完整计算。
+
+    调用者需事先将所有输入张量移动到 GPU 设备上。
+    本函数从输入张量推断设备，不再做设备选择或数据搬运。
+
+    参数:
+        fp64:   当为 True 时使用 fp64 精度小算子拼接；
+                当为 False 时 calc_type 使用 fp32（与 CPU 标杆一致），
+                输出精度 datatype 与输入精度一致。
+    """
     # ------------------------------------------------------------------
-    # 精度设置：fp64 控制计算精度
+    # 精度设置：与 CPU 标杆完全一致
+    #   fp64=True:  calc_type=datatype=gtype=mmtype=float64
+    #   fp64=False: calc_type=float32, datatype=q.dtype, gtype=g.dtype, mmtype=datatype
     # ------------------------------------------------------------------
     if fp64:
         calc_type = torch.float64
@@ -128,11 +116,14 @@ def chunk_bwd_dqkwg_gpu(
         mmtype = torch.float64
         print("使用 fp64 精度小算子进行拼接")
     else:
-        calc_type = q.dtype
+        calc_type = torch.float32
         datatype = q.dtype
         gtype = g.dtype if g is not None else q.dtype
         mmtype = datatype
-        print(f"使用输入数据精度小算子进行拼接: {q.dtype}")
+        print(f"使用 fp32 计算精度，输出精度: {q.dtype}")
+
+    # 从输入张量推断设备
+    device = q.device
 
     B, T, HK, K = q.shape
     HV = v.shape[2]
@@ -143,7 +134,7 @@ def chunk_bwd_dqkwg_gpu(
 
     g_gamma = None
 
-    # 初始化输出张量（在 GPU 上分配）
+    # 初始化输出张量（在输入设备上分配）
     dq_hv = torch.zeros((B, T, HV, K), dtype=datatype, device=device)
     dk_hv = torch.zeros((B, T, HV, K), dtype=datatype, device=device)
     dg = torch.zeros_like(g) if g is not None else None
@@ -330,12 +321,36 @@ def chunk_bwd_dqkwg_gpu_torch(
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
     """
     带转置的 GPU 标杆包装函数。
+    负责 GPU 设备选择、输入张量搬运、布局转置，然后调用核心计算函数。
+
     输入张量布局与 executor 一致：
         q, k: [B, HK, T, K]；v, do, dv: [B, HV, T, V]
         g: [B, HV, T]；h, dh: [B, HV, num_chunks, K, V]；w: [B, HV, T, K]
     输出张量布局：
         dq, dk: [B, HK, T, K]；dw: [B, HV, T, K]；dg: [B, HV, T]
     """
+    # ------------------------------------------------------------------
+    # GPU 设备选择
+    # ------------------------------------------------------------------
+    if device is None:
+        device = select_gpu_device(0)
+    elif isinstance(device, int):
+        device = select_gpu_device(device)
+    elif isinstance(device, str):
+        device = torch.device(device)
+        if device.type != 'cuda':
+            raise RuntimeError(f"设备类型必须为 cuda，当前为 {device.type}")
+        print(f"已选择 GPU 设备: {device}")
+    elif isinstance(device, torch.device):
+        if device.type != 'cuda':
+            raise RuntimeError(f"设备类型必须为 cuda，当前为 {device.type}")
+        print(f"已选择 GPU 设备: {device}")
+    else:
+        raise RuntimeError(f"不支持的 device 参数类型: {type(device)}")
+
+    # ------------------------------------------------------------------
+    # 布局转置
+    # ------------------------------------------------------------------
     q_t = q.transpose(1, 2).contiguous()
     k_t = k.transpose(1, 2).contiguous()
     v_t = v.transpose(1, 2).contiguous()
@@ -348,9 +363,19 @@ def chunk_bwd_dqkwg_gpu_torch(
 
     cu_seqlens_tensor = torch.tensor(cu_seqlens, dtype=torch.int64) if cu_seqlens is not None else None
 
+    # ------------------------------------------------------------------
+    # 将所有张量移动到 GPU
+    # ------------------------------------------------------------------
+    q_t, k_t, v_t, do_t, h_t, dh_t, w_t, g_t, dv_t, cu_seqlens_tensor = move_tensors_to_device(
+        q_t, k_t, v_t, do_t, h_t, dh_t, w_t, g_t, dv_t, cu_seqlens_tensor, device
+    )
+
+    # ------------------------------------------------------------------
+    # 调用核心计算函数（输入已在 GPU 上）
+    # ------------------------------------------------------------------
     dq, dk, dw, dg = chunk_bwd_dqkwg_gpu(
         q_t, k_t, v_t, do_t, h_t, dh_t, w_t, g_t, dv_t, scale, cu_seqlens_tensor, chunk_size,
-        fp64=fp64, device=device
+        fp64=fp64
     )
 
     dq = dq.transpose(1, 2).contiguous()
@@ -416,10 +441,10 @@ if __name__ == "__main__":
     cu_seqlens = None   # is_fix=True，定长模式
 
     # ----------------------------------------------------------
-    # 测试 1: fp64=False（使用输入数据精度小算子拼接）
+    # 测试 1: fp64=False（calc_type=fp32，与 CPU 标杆一致）
     # ----------------------------------------------------------
     print("\n" + "-" * 40)
-    print("测试 1: fp64=False（使用输入数据精度）")
+    print("测试 1: fp64=False（calc_type=fp32）")
     print("-" * 40)
 
     dq1, dk1, dw1, dg1 = chunk_bwd_dqkwg_gpu_torch(
