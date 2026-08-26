@@ -25,6 +25,7 @@ show_usage() {
   -gpu_device_id=6               物理 GPU 卡号，默认 6；容器内重新编号为逻辑设备 0
   -gpu_container=fla_gpu_atk    容器名，默认 fla_gpu_atk
   -gpu_image=                   GPU 基础镜像，必选（如 pytorch/pytorch:2.3.0-cuda12.1-cudnn8-devel）
+  -gpu_image_tar=              本地镜像 tar 文件路径；设置后先 docker load 再用加载出的镜像名创建容器
   -gpu_repo_root=               仓库在容器内的挂载根目录，必选（如 /workspace/flash-linear-attention-npu）
   -action=start                 start：启动容器并前台运行 ATK server；stop：停止并删除容器；
                                  test_connection_from_npu：在 NPU 机器测试到 GPU server 连通性
@@ -37,6 +38,11 @@ show_usage() {
   # 启动 GPU server（前台，不要退出终端）
   bash tests/atk/common/gpu_server.sh -op=chunk_kda_fwd \
       -gpu_image=pytorch/pytorch:2.3.0-cuda12.1-cudnn8-devel \
+      -gpu_repo_root=/workspace/flash-linear-attention-npu
+
+  # 用本地镜像 tar 启动（先 docker load 再创建容器）
+  bash tests/atk/common/gpu_server.sh -op=chunk_kda_fwd \
+      -gpu_image_tar=/data/gpu_atk.tar \
       -gpu_repo_root=/workspace/flash-linear-attention-npu
 
   # 复用已有容器时仅启动 ATK server
@@ -71,6 +77,7 @@ GPU_DEVICE_ID="${GPU_DEVICE_ID:-6}"
 GPU_HOST_PORT="${GPU_HOST_PORT:-9090}"
 GPU_CONTAINER="${GPU_CONTAINER:-fla_gpu_atk}"
 GPU_IMAGE=""
+GPU_IMAGE_TAR="${GPU_IMAGE_TAR:-}"
 GPU_REPO_ROOT=""
 ACTION="${ACTION:-start}"
 ATK_ENV="${ATK_ENV:-}"
@@ -150,6 +157,18 @@ while [[ $# -gt 0 ]]; do
       shift
       [[ $# -gt 0 ]] || die "参数 --gpu_image 需要取值"
       GPU_IMAGE="$1"
+      ;;
+    -gpu_image_tar=*) GPU_IMAGE_TAR="${1#-gpu_image_tar=}" ;;
+    -gpu_image_tar)
+      shift
+      [[ $# -gt 0 ]] || die "参数 -gpu_image_tar 需要取值"
+      GPU_IMAGE_TAR="$1"
+      ;;
+    --gpu_image_tar=*) GPU_IMAGE_TAR="${1#--gpu_image_tar=}" ;;
+    --gpu_image_tar)
+      shift
+      [[ $# -gt 0 ]] || die "参数 --gpu_image_tar 需要取值"
+      GPU_IMAGE_TAR="$1"
       ;;
     -gpu_repo_root=*) GPU_REPO_ROOT="${1#-gpu_repo_root=}" ;;
     -gpu_repo_root)
@@ -330,24 +349,44 @@ log_info "宿主机映射端口：${GPU_HOST_PORT} -> 容器 9090"
 log_info "容器名：${GPU_CONTAINER}"
 log_info "容器内仓库根：${GPU_REPO_ROOT}"
 log_info "算子测试目录：${OP_TEST_DIR}"
+if [[ -n "$GPU_IMAGE_TAR" ]]; then
+  log_info "GPU 镜像 tar：${GPU_IMAGE_TAR}"
+fi
 if [[ -n "$GPU_IMAGE" ]]; then
   log_info "GPU 镜像：${GPU_IMAGE}"
 fi
 
-# 容器已存在则复用，否则用 -gpu_image 启动新容器
+# 容器已存在则复用，否则创建新容器
 if docker inspect "$GPU_CONTAINER" >/dev/null 2>&1; then
   log_info "容器 ${GPU_CONTAINER} 已存在，复用"
   docker start "$GPU_CONTAINER" >/dev/null 2>&1 || true
 else
-  [[ -n "$GPU_IMAGE" ]] || die "容器不存在，必须传入 -gpu_image=<镜像名> 创建新容器"
-  log_info "创建新容器：${GPU_CONTAINER}（镜像 ${GPU_IMAGE}）"
+  # 确定镜像名：优先用 -gpu_image_tar 加载，其次用 -gpu_image
+  RUN_IMAGE=""
+  if [[ -n "$GPU_IMAGE_TAR" ]]; then
+    [[ -f "$GPU_IMAGE_TAR" ]] || die "镜像 tar 文件不存在：${GPU_IMAGE_TAR}"
+    log_info "从 tar 加载镜像：${GPU_IMAGE_TAR}"
+    LOAD_OUTPUT="$(docker load -i "$GPU_IMAGE_TAR")" || die "docker load 失败：${GPU_IMAGE_TAR}"
+    # docker load 输出形如 "Loaded image: repo:tag" 或 "Loaded image ID: sha256:xxx"
+    RUN_IMAGE="$(echo "$LOAD_OUTPUT" | grep -oP 'Loaded image: \K.*' | head -n1)"
+    if [[ -z "$RUN_IMAGE" ]]; then
+      # 旧格式只给了 image ID，回退到 -gpu_image 或用 ID
+      RUN_IMAGE="$GPU_IMAGE"
+      [[ -n "$RUN_IMAGE" ]] || die "docker load 未返回镜像名，且未传入 -gpu_image，无法创建容器。load 输出：${LOAD_OUTPUT}"
+    fi
+    log_info "加载得到镜像：${RUN_IMAGE}"
+  else
+    RUN_IMAGE="$GPU_IMAGE"
+  fi
+  [[ -n "$RUN_IMAGE" ]] || die "容器不存在，必须传入 -gpu_image=<镜像名> 或 -gpu_image_tar=<tar路径> 创建新容器"
+  log_info "创建新容器：${GPU_CONTAINER}（镜像 ${RUN_IMAGE}）"
   docker run -d \
     --name "$GPU_CONTAINER" \
     --gpus "\"device=${GPU_DEVICE_ID}\"" \
     -p "${GPU_HOST_PORT}:9090" \
     -v "$(pwd):${GPU_REPO_ROOT}" \
     -w "$OP_TEST_DIR" \
-    "$GPU_IMAGE" \
+    "$RUN_IMAGE" \
     sleep infinity
 fi
 

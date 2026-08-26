@@ -181,6 +181,11 @@ bash tests/atk/common/gpu_server.sh -op=<op_name> \
   [-gpu_device_id=6] [-gpu_host_port=9090] \
   [-atk_env=<容器内ATK虚拟环境>] [-triton_root=<兼容Triton源码根>]
 
+# 用本地镜像 tar 启动（先 docker load 再创建容器）
+bash tests/atk/common/gpu_server.sh -op=<op_name> \
+  -gpu_image_tar=<本地镜像tar路径> \
+  -gpu_repo_root=<容器内仓库根目录>
+
 # 复用已有容器
 bash tests/atk/common/gpu_server.sh -op=<op_name> \
   -gpu_container=<容器名> -gpu_repo_root=<容器内仓库根目录>
@@ -191,6 +196,10 @@ bash tests/atk/common/gpu_server.sh -op=<op_name> -action=stop
 
 容器只暴露物理 GPU 6 时，容器内逻辑设备为 0；`-gpu_device_id` 控制物理卡号。
 `-gpu_host_port` 必须与 NPU 端 `run_test_cpu.sh -gpu_host_port` 一致。
+
+`-gpu_image_tar` 指定本地镜像 tar 文件路径，脚本会先 `docker load` 再用加载出的镜像名
+（输出 `Loaded image: <repo:tag>`）创建容器；若 tar 只含 image ID 则回退使用 `-gpu_image`。
+`-gpu_image`（镜像名）与 `-gpu_image_tar`（tar 路径）二选一即可创建新容器。
 
 ### NPU 到 GPU server 连通性自检（action=test_connection_from_npu）
 
