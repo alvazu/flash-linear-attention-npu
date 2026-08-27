@@ -343,6 +343,17 @@ fi
 OP_TEST_DIR="${GPU_REPO_ROOT}/tests/atk/${OP}"
 EXECUTOR_FILE="executor_${OP}.py"
 
+# 从脚本自身路径解析宿主机仓库根目录（向上 3 级：common/atk/tests -> 仓库根）
+HOST_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+
+# 预检：宿主机上 executor 文件必须存在
+HOST_EXECUTOR="${HOST_REPO_ROOT}/tests/atk/${OP}/${EXECUTOR_FILE}"
+if [[ ! -f "$HOST_EXECUTOR" ]]; then
+  die "宿主机未找到 executor 文件：${HOST_EXECUTOR}（仓库根目录：${HOST_REPO_ROOT}）"
+fi
+log_info "宿主机仓库根：${HOST_REPO_ROOT}"
+log_info "宿主机 executor：${HOST_EXECUTOR}"
+
 log_info "算子：${OP}"
 log_info "物理 GPU 卡号：${GPU_DEVICE_ID}（容器内逻辑设备 0）"
 log_info "宿主机映射端口：${GPU_HOST_PORT} -> 容器 9090"
@@ -384,7 +395,7 @@ else
     --name "$GPU_CONTAINER" \
     --gpus "\"device=${GPU_DEVICE_ID}\"" \
     -p "${GPU_HOST_PORT}:9090" \
-    -v "$(pwd):${GPU_REPO_ROOT}" \
+    -v "${HOST_REPO_ROOT}:${GPU_REPO_ROOT}" \
     -w "$OP_TEST_DIR" \
     "$RUN_IMAGE" \
     sleep infinity
@@ -411,7 +422,7 @@ INNER_CMDS+=("unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY")
 INNER_CMDS+=("cd '${OP_TEST_DIR}'")
 INNER_CMDS+=("atk --version")
 INNER_CMDS+=("python -c 'import torch; print(\"torch\", torch.__version__, \"cuda\", torch.cuda.is_available(), torch.cuda.device_count())'")
-INNER_CMDS+=("test -f '${EXECUTOR_FILE}' || { echo '未找到 executor: ${EXECUTOR_FILE}'; exit 1; }")
+INNER_CMDS+=("test -f '${EXECUTOR_FILE}' || { echo '未找到 executor: ${OP_TEST_DIR}/${EXECUTOR_FILE}（容器内）'; exit 1; }")
 INNER_CMDS+=("echo '[GPU ATK server] 开始启动 ATK server，监听 0.0.0.0:9090'")
 INNER_CMDS+=("atk server --host 0.0.0.0 --port 9090 --devices 0 --name gpu_reference --output_path ./atk_output/gpu_server --plugin_path './${EXECUTOR_FILE}' --timeout '${ATK_SERVER_TIMEOUT}'")
 
