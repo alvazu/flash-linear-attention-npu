@@ -1,0 +1,39 @@
+tests/atk/common/gpu_server.sh
+  s_dc8a118e31fb5d::t_9696e3c69f26fd 425
+  s_dc8a118e31fb5d::t_728a5c4bce06dc 346-356
+  s_dc8a118e31fb5d::t_9fa7c4a3a3a2ba 398
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "d99307d1170a1c11c9e51494fb670e21b2fdf64d",
+  "prompts": {},
+  "humans": {
+    "h_0b241a6196643c": {
+      "author": "alvazu <x@wire.me>"
+    }
+  },
+  "sessions": {
+    "s_dc8a118e31fb5d": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a8ea5b6f47532a51852683a",
+        "model": "glm-5.2"
+      },
+      "human_author": "alvazu <x@wire.me>",
+      "custom_attributes": {
+        "tool_use_id": "6a8f93f4f47532a518526a29",
+        "dedupe_key": "6a8ea5b6f47532a51852683a:6a8f93f4f47532a518526a29:afterEdit:340def5d",
+        "session_id": "6a8ea5b6f47532a51852683a",
+        "external_session_id": "6a8ea5b6f47532a51852683a",
+        "client_type": "ide",
+        "runtime_client": "trae-tob-git-ai",
+        "operation_id": "6a8f93f4f47532a518526a29",
+        "tool_type": "builtin",
+        "edit_kind": "file_edit",
+        "source_scene": "agent",
+        "tool_id": "icube:applyChatSnapshotPatch"
+      }
+    }
+  }
+}
