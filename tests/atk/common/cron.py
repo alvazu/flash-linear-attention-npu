@@ -23,6 +23,8 @@
       --conda-env jisihuai \
       --clone-dir /data/cron/fla \
       --http-proxy http://127.0.0.1:7890 \
+      --npu-soc ascend910b \
+      --operators chunk_fwd_o,chunk_bwd_dv_local \
       --gpu-host 141.61.21.62 \
       --gpu-host-port 9090 \
       --gpu-ssh-user root \
@@ -119,13 +121,13 @@ def ping_host(host: str, count: int = 3, wait: int = 5) -> bool:
 def query_python_paths(env: dict) -> tuple[str, str]:
     """查询当前 python 的 sys.prefix（PYTHONHOME）与 site-packages 路径。"""
     py_prefix = run(
-        "python -c 'import sys; print(sys.prefix)'",
-        shell=True, check=True, env=env, capture=True,
+        ["python", "-c", "import sys; print(sys.prefix)"],
+        check=True, env=env, capture=True,
     )
     pythonhome = py_prefix.stdout.strip()
     site_pkg = run(
-        "python -c 'import site; print(site.getsitepackages()[0])'",
-        shell=True, check=True, env=env, capture=True,
+        ["python", "-c", "import site; print(site.getsitepackages()[0])"],
+        check=True, env=env, capture=True,
     )
     site_packages = site_pkg.stdout.strip()
     if not pythonhome or not site_packages:
@@ -305,11 +307,20 @@ def ssh_clone_repos(ssh_prefix: list[str], ssh_target: str,
 # 步骤 2-3：NPU 本地编译 + 安装
 # ---------------------------------------------------------------------------
 
-def build_and_install(fla_dir: Path, env: dict) -> None:
-    """编译 fla wheel 并安装（取构建输出最后一行作为安装命令）。"""
-    log("步骤 2: 编译 fla wheel")
+def build_and_install(fla_dir: Path, env: dict, npu_soc: str = "ascend910b",
+                       operators: str = "") -> None:
+    """编译 fla wheel 并安装（取构建输出最后一行作为安装命令）。
+
+    Args:
+      npu_soc: 设置 FLA_NPU_SOC（默认 ascend910b；A3=ascend910_93，A5=ascend950）
+      operators: 逗号分隔算子列表，非空时设置 FLA_NPU_OPS 只编译指定算子
+    """
+    log(f"步骤 2: 编译 fla wheel (FLA_NPU_SOC={npu_soc}"
+        f"{f', FLA_NPU_OPS={operators}' if operators else ''})")
     build_env = env.copy()
-    build_env["FLA_NPU_SOC"] = "ascend950"
+    build_env["FLA_NPU_SOC"] = npu_soc
+    if operators:
+        build_env["FLA_NPU_OPS"] = operators
     result = run(
         "python scripts/build_wheel.py",
         cwd=fla_dir, env=build_env, capture=True,
@@ -442,6 +453,9 @@ def main() -> int:
     parser.add_argument("--http-proxy", default="",
                         help="git clone 时使用的 HTTP 代理 "
                              "（如 http://127.0.0.1:7890）；clone 完成后自动 unset")
+    parser.add_argument("--npu-soc", default="ascend910b",
+                        help="FLA_NPU_SOC 芯片类型（默认 ascend910b；"
+                             "A3=ascend910_93，A5=ascend950）")
     parser.add_argument("--npu-device-id", default="7",
                         help="NPU 物理卡号（默认 7）")
     parser.add_argument("--npu-gpu-device-id", default="0",
@@ -483,7 +497,9 @@ def main() -> int:
 
     # 通用参数
     parser.add_argument("--operators", default="",
-                        help="逗号分隔的算子名列表；为空时自动扫描")
+                        help="逗号分隔算子列表（如 chunk_fwd_o,chunk_bwd_dv_local）；"
+                             "非空时编译设置 FLA_NPU_OPS 只编这些算子、精度只跑这些算子；"
+                             "为空时编译全部算子并自动扫描全部算子")
     parser.add_argument("--server-wait-timeout", type=int, default=1800,
                         help="等待 GPU server 可达的超时（秒，默认 1800）")
     parser.add_argument("--skip-gpu-clone", action="store_true",
@@ -532,7 +548,8 @@ def main() -> int:
         return 1
 
     # 步骤 2-3: NPU 本地编译 + 安装（使用未带代理的 env）
-    build_and_install(fla_dir, env)
+    build_and_install(fla_dir, env, npu_soc=args.npu_soc,
+                       operators=args.operators)
 
     # 步骤 3.5: 查询 python 路径，设置 PYTHONHOME / ASCEND_CUSTOM_OPP_PATH
     log("步骤 3.5: 设置 NPU 精度检查环境变量 PYTHONHOME / ASCEND_CUSTOM_OPP_PATH")
