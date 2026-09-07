@@ -59,14 +59,13 @@ def log(msg: str) -> None:
     print(f"[cron] {msg}", flush=True)
 
 
-def run(cmd: str | list[str], *, check: bool = True, cwd: Path | None = None,
+def run(cmd: list[str], *, check: bool = True, cwd: Path | None = None,
         env: dict | None = None, timeout: int | None = None,
         capture: bool = False) -> subprocess.CompletedProcess:
-    """执行命令，统一封装。"""
-    shell = isinstance(cmd, str)
-    log(f"$ {cmd if shell else ' '.join(cmd)}")
+    """执行命令（list 形式，不走 shell）。"""
+    log(f"$ {' '.join(cmd)}")
     return subprocess.run(
-        cmd, shell=shell, check=check, cwd=cwd, env=env,
+        cmd, check=check, cwd=cwd, env=env,
         timeout=timeout, text=True,
         stdout=subprocess.PIPE if capture else None,
         stderr=subprocess.STDOUT if capture else None,
@@ -215,14 +214,15 @@ def activate_conda(conda_env: str) -> dict:
         log("未指定 conda 环境，使用当前环境")
         return env
     result = run(
-        f'eval "$(conda shell.bash hook)" && conda activate {conda_env} && env',
-        shell=True, check=True, capture=True,
+        ["bash", "-c",
+         f'eval "$(conda shell.bash hook)" && conda activate {shlex.quote(conda_env)} && env'],
+        check=True, capture=True,
     )
     for line in result.stdout.splitlines():
         if "=" in line:
             key, _, val = line.partition("=")
             env[key] = val
-    py = run("which python", shell=True, check=True, env=env, capture=True)
+    py = run(["which", "python"], check=True, env=env, capture=True)
     log(f"Python: {py.stdout.strip()}")
     return env
 
@@ -245,18 +245,19 @@ def clone_repos_local(clone_dir: Path, proxy: str = "",
 
     fla_dir = clone_dir / "flash-linear-attention-npu"
     if not fla_dir.exists():
-        run(f"git clone {FLA_REPO} {fla_dir}", cwd=clone_dir, env=run_env)
+        run(["git", "clone", FLA_REPO, str(fla_dir)],
+            cwd=clone_dir, env=run_env)
     else:
         log(f"已存在，跳过 clone: {fla_dir}")
-        run("git pull --rebase", cwd=fla_dir, check=False, env=run_env)
+        run(["git", "pull", "--rebase"], cwd=fla_dir, check=False, env=run_env)
 
     work_tool_dir = clone_dir / "work_tool"
     if not work_tool_dir.exists():
-        run(f"git clone -b {WORK_TOOL_BRANCH} {WORK_TOOL_REPO} {work_tool_dir}",
+        run(["git", "clone", "-b", WORK_TOOL_BRANCH, WORK_TOOL_REPO, str(work_tool_dir)],
             cwd=clone_dir, env=run_env)
     else:
         log(f"已存在，跳过 clone: {work_tool_dir}")
-        run(f"git pull --rebase", cwd=work_tool_dir, check=False, env=run_env)
+        run(["git", "pull", "--rebase"], cwd=work_tool_dir, check=False, env=run_env)
 
     if proxy:
         log("本地 clone 完成，后续命令不再使用代理（等效 unset http_proxy/https_proxy）")
@@ -322,7 +323,7 @@ def build_and_install(fla_dir: Path, env: dict, npu_soc: str = "ascend910b",
     if operators:
         build_env["FLA_NPU_OPS"] = operators
     result = run(
-        "python scripts/build_wheel.py",
+        ["python", "scripts/build_wheel.py"],
         cwd=fla_dir, env=build_env, capture=True,
     )
     build_output = result.stdout.strip()
@@ -339,7 +340,7 @@ def build_and_install(fla_dir: Path, env: dict, npu_soc: str = "ascend910b",
         install_cmd = install_lines[-1]
 
     log(f"步骤 3: 安装 -> {install_cmd}")
-    run(install_cmd, shell=True, cwd=fla_dir, env=env)
+    run(shlex.split(install_cmd), cwd=fla_dir, env=env)
 
 
 # ---------------------------------------------------------------------------
@@ -504,6 +505,8 @@ def main() -> int:
                         help="等待 GPU server 可达的超时（秒，默认 1800）")
     parser.add_argument("--skip-gpu-clone", action="store_true",
                         help="跳过 SSH clone GPU 侧仓库（假定已存在且最新）")
+    parser.add_argument("--skip-npu-build", action="store_true",
+                        help="跳过 NPU 侧编译+安装（假定 wheel 已安装）")
     args = parser.parse_args()
 
     ssh_target = (
@@ -548,8 +551,11 @@ def main() -> int:
         return 1
 
     # 步骤 2-3: NPU 本地编译 + 安装（使用未带代理的 env）
-    build_and_install(fla_dir, env, npu_soc=args.npu_soc,
-                       operators=args.operators)
+    if args.skip_npu_build:
+        log("步骤 2-3: 跳过 NPU 编译+安装（--skip-npu-build）")
+    else:
+        build_and_install(fla_dir, env, npu_soc=args.npu_soc,
+                           operators=args.operators)
 
     # 步骤 3.5: 查询 python 路径，设置 PYTHONHOME / ASCEND_CUSTOM_OPP_PATH
     log("步骤 3.5: 设置 NPU 精度检查环境变量 PYTHONHOME / ASCEND_CUSTOM_OPP_PATH")
