@@ -4,16 +4,19 @@ set -euo pipefail
 # GPU 端 ATK server 一键启动脚本。
 # 职责：在 GPU 宿主机上启动 Docker 容器，容器内激活 ATK 环境、校验 CUDA/Triton，
 #       随后前台启动 ATK server，监听 0.0.0.0:<port>，供 NPU 端 accuracy_gpu 远程调用。
-# 本脚本在 GPU 宿主机执行，不在 NPU 机器上执行。
-# 容器内 ATK server 与 NPU 端 run_test_cpu.sh -scope=accuracy_gpu 配对使用。
-# action=test_connection_from_npu 例外：在 NPU 机器执行，测试到 GPU server 的连通性。
+# action=gpu_server_start 在 GPU 宿主机执行：启动容器并前台运行 ATK server。
+# action=npu 在 NPU 机器执行：构造 atk node(本地 NPU) + node(远程 GPU) + task 链，
+#       对接已启动的 GPU server，跑 accuracy_gpu 精度对拍。
+# action=test_connection_from_npu 在 NPU 机器执行：测试到 GPU server 的连通性。
+# 容器内 ATK server 与 NPU 端 action=npu / run_test_cpu.sh -scope=accuracy_gpu 配对使用。
 
 show_usage() {
   cat <<'EOF'
 用法：
   bash tests/atk/common/gpu_server.sh -op=<算子名> [选项]
 
-  默认（action=start）在 GPU 宿主机执行：启动容器并前台运行 ATK server。
+  默认（action=gpu_server_start）在 GPU 宿主机执行：启动容器并前台运行 ATK server。
+  action=npu 在 NPU 机器执行：对接远程 GPU server 跑精度对拍（atk node ... task）。
   action=test_connection_from_npu 在 NPU 机器执行：测试到 GPU server 的连通性。
 
 必选参数：
@@ -27,8 +30,19 @@ show_usage() {
   -gpu_image=                   GPU 基础镜像，必选（如 pytorch/pytorch:2.3.0-cuda12.1-cudnn8-devel）
   -gpu_image_tar=              本地镜像 tar 文件路径；设置后先 docker load 再用加载出的镜像名创建容器
   -gpu_repo_root=               仓库在容器内的挂载根目录，必选（如 /workspace/flash-linear-attention-npu）
-  -action=start                 start：启动容器并前台运行 ATK server；stop：停止并删除容器；
-                                 test_connection_from_npu：在 NPU 机器测试到 GPU server 连通性
+  -action=gpu_server_start       gpu_server_start：启动容器并前台运行 ATK server；
+                                  gpu_server_stop：停止并删除容器；
+                                  npu：在 NPU 机器构造 atk node+node+task，对接远程 GPU server 跑精度对拍；
+                                  test_connection_from_npu：在 NPU 机器测试到 GPU server 连通性
+  -npu_device_id=7               NPU 物理卡号，action=npu 时使用，默认 7
+  -npu_gpu_device_id=0           远程 GPU 参考节点 --devices，action=npu 时使用，默认 0
+  -npu_output_path=./atk_output/kda_remote
+                                  action=npu 输出目录，默认 ./atk_output/kda_remote
+  -npu_task=accuracy             action=npu 任务类型，默认 accuracy
+  -npu_mt=1                      action=npu -mt 值，默认 1
+  -npu_task_timeout=2000         action=npu task 超时，默认 2000
+  -npu_atk_config=               action=npu atk 配置 json；未设置时用 ./atk_${op}.json
+  -npu_executor=                 action=npu executor 文件；未设置时用 ./executor_${op}.py
   -atk_env=                     容器内 ATK 虚拟环境目录，设置后 source "$ATK_ENV/bin/activate"
   -triton_root=                 兼容 Triton 源码根（加入 PYTHONPATH）；未设置则跳过
   -atk_server_timeout=8000      ATK server 单任务超时，默认 8000
@@ -50,7 +64,11 @@ show_usage() {
       -gpu_container=fla_gpu_atk -gpu_repo_root=/workspace/flash-linear-attention-npu
 
   # 停止并删除容器
-  bash tests/atk/common/gpu_server.sh -op=chunk_kda_fwd -action=stop
+  bash tests/atk/common/gpu_server.sh -op=chunk_kda_fwd -action=gpu_server_stop
+
+  # 在 NPU 机器跑精度对拍（对接已启动的远程 GPU server）
+  bash tests/atk/common/gpu_server.sh -op=chunk_kda_fwd -action=npu \
+      -gpu_host=10.10.10.10 -gpu_host_port=9090 -npu_device_id=7
 
   # 在 NPU 机器测试到 GPU server 的连通性（TCP + ATK server 响应）
   bash tests/atk/common/gpu_server.sh -op=chunk_kda_fwd \
@@ -79,10 +97,19 @@ GPU_CONTAINER="${GPU_CONTAINER:-fla_gpu_atk}"
 GPU_IMAGE=""
 GPU_IMAGE_TAR="${GPU_IMAGE_TAR:-}"
 GPU_REPO_ROOT=""
-ACTION="${ACTION:-start}"
+ACTION="${ACTION:-gpu_server_start}"
 ATK_ENV="${ATK_ENV:-}"
 TRITON_ROOT="${TRITON_ROOT:-}"
 ATK_SERVER_TIMEOUT="${ATK_SERVER_TIMEOUT:-8000}"
+# action=npu 专用参数
+NPU_DEVICE_ID="${NPU_DEVICE_ID:-7}"
+NPU_GPU_DEVICE_ID="${NPU_GPU_DEVICE_ID:-0}"
+NPU_OUTPUT_PATH="${NPU_OUTPUT_PATH:-./atk_output/kda_remote}"
+NPU_TASK="${NPU_TASK:-accuracy}"
+NPU_MT="${NPU_MT:-1}"
+NPU_TASK_TIMEOUT="${NPU_TASK_TIMEOUT:-2000}"
+NPU_ATK_CONFIG="${NPU_ATK_CONFIG:-}"
+NPU_EXECUTOR="${NPU_EXECUTOR:-}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -230,6 +257,102 @@ while [[ $# -gt 0 ]]; do
       [[ $# -gt 0 ]] || die "参数 --atk_server_timeout 需要取值"
       ATK_SERVER_TIMEOUT="$1"
       ;;
+    -npu_device_id=*) NPU_DEVICE_ID="${1#-npu_device_id=}" ;;
+    -npu_device_id)
+      shift
+      [[ $# -gt 0 ]] || die "参数 -npu_device_id 需要取值"
+      NPU_DEVICE_ID="$1"
+      ;;
+    --npu_device_id=*) NPU_DEVICE_ID="${1#--npu_device_id=}" ;;
+    --npu_device_id)
+      shift
+      [[ $# -gt 0 ]] || die "参数 --npu_device_id 需要取值"
+      NPU_DEVICE_ID="$1"
+      ;;
+    -npu_gpu_device_id=*) NPU_GPU_DEVICE_ID="${1#-npu_gpu_device_id=}" ;;
+    -npu_gpu_device_id)
+      shift
+      [[ $# -gt 0 ]] || die "参数 -npu_gpu_device_id 需要取值"
+      NPU_GPU_DEVICE_ID="$1"
+      ;;
+    --npu_gpu_device_id=*) NPU_GPU_DEVICE_ID="${1#--npu_gpu_device_id=}" ;;
+    --npu_gpu_device_id)
+      shift
+      [[ $# -gt 0 ]] || die "参数 --npu_gpu_device_id 需要取值"
+      NPU_GPU_DEVICE_ID="$1"
+      ;;
+    -npu_output_path=*) NPU_OUTPUT_PATH="${1#-npu_output_path=}" ;;
+    -npu_output_path)
+      shift
+      [[ $# -gt 0 ]] || die "参数 -npu_output_path 需要取值"
+      NPU_OUTPUT_PATH="$1"
+      ;;
+    --npu_output_path=*) NPU_OUTPUT_PATH="${1#--npu_output_path=}" ;;
+    --npu_output_path)
+      shift
+      [[ $# -gt 0 ]] || die "参数 --npu_output_path 需要取值"
+      NPU_OUTPUT_PATH="$1"
+      ;;
+    -npu_task=*) NPU_TASK="${1#-npu_task=}" ;;
+    -npu_task)
+      shift
+      [[ $# -gt 0 ]] || die "参数 -npu_task 需要取值"
+      NPU_TASK="$1"
+      ;;
+    --npu_task=*) NPU_TASK="${1#--npu_task=}" ;;
+    --npu_task)
+      shift
+      [[ $# -gt 0 ]] || die "参数 --npu_task 需要取值"
+      NPU_TASK="$1"
+      ;;
+    -npu_mt=*) NPU_MT="${1#-npu_mt=}" ;;
+    -npu_mt)
+      shift
+      [[ $# -gt 0 ]] || die "参数 -npu_mt 需要取值"
+      NPU_MT="$1"
+      ;;
+    --npu_mt=*) NPU_MT="${1#--npu_mt=}" ;;
+    --npu_mt)
+      shift
+      [[ $# -gt 0 ]] || die "参数 --npu_mt 需要取值"
+      NPU_MT="$1"
+      ;;
+    -npu_task_timeout=*) NPU_TASK_TIMEOUT="${1#-npu_task_timeout=}" ;;
+    -npu_task_timeout)
+      shift
+      [[ $# -gt 0 ]] || die "参数 -npu_task_timeout 需要取值"
+      NPU_TASK_TIMEOUT="$1"
+      ;;
+    --npu_task_timeout=*) NPU_TASK_TIMEOUT="${1#--npu_task_timeout=}" ;;
+    --npu_task_timeout)
+      shift
+      [[ $# -gt 0 ]] || die "参数 --npu_task_timeout 需要取值"
+      NPU_TASK_TIMEOUT="$1"
+      ;;
+    -npu_atk_config=*) NPU_ATK_CONFIG="${1#-npu_atk_config=}" ;;
+    -npu_atk_config)
+      shift
+      [[ $# -gt 0 ]] || die "参数 -npu_atk_config 需要取值"
+      NPU_ATK_CONFIG="$1"
+      ;;
+    --npu_atk_config=*) NPU_ATK_CONFIG="${1#--npu_atk_config=}" ;;
+    --npu_atk_config)
+      shift
+      [[ $# -gt 0 ]] || die "参数 --npu_atk_config 需要取值"
+      NPU_ATK_CONFIG="$1"
+      ;;
+    -npu_executor=*) NPU_EXECUTOR="${1#-npu_executor=}" ;;
+    -npu_executor)
+      shift
+      [[ $# -gt 0 ]] || die "参数 -npu_executor 需要取值"
+      NPU_EXECUTOR="$1"
+      ;;
+    --npu_executor=*) NPU_EXECUTOR="${1#--npu_executor=}" ;;
+    --npu_executor)
+      shift
+      [[ $# -gt 0 ]] || die "参数 --npu_executor 需要取值"
+      NPU_EXECUTOR="$1"
+      ;;
     -h|--help)
       show_usage
       exit 0
@@ -244,8 +367,8 @@ done
 
 [[ -n "$OP" ]] || die "必须传入 -op=<算子名>"
 case "$ACTION" in
-  start|stop|test_connection_from_npu) ;;
-  *) die "不支持的 action：${ACTION}，请使用 start、stop 或 test_connection_from_npu" ;;
+  gpu_server_start|gpu_server_stop|npu|test_connection_from_npu) ;;
+  *) die "不支持的 action：${ACTION}，请使用 gpu_server_start、gpu_server_stop、npu 或 test_connection_from_npu" ;;
 esac
 
 # ---------------------------------------------------------------------------
@@ -326,9 +449,71 @@ PYEOF
 fi
 
 # ---------------------------------------------------------------------------
-# stop：停止并删除容器
+# npu：在 NPU 机器构造 atk node(本地 NPU) + node(远程 GPU) + task 链，跑精度对拍
 # ---------------------------------------------------------------------------
-if [[ "$ACTION" == "stop" ]]; then
+if [[ "$ACTION" == "npu" ]]; then
+  [[ -n "$GPU_HOST" ]] || die "action=npu 必须传入 -gpu_host=<GPU server 地址>"
+  [[ -n "$GPU_HOST_PORT" ]] || die "action=npu 必须传入 -gpu_host_port=<GPU server 端口>"
+
+  ATK_BIN="$(command -v atk || true)"
+  [[ -n "$ATK_BIN" ]] || die "找不到 atk，请先安装并激活 ATK 环境"
+
+  # 从脚本自身路径解析仓库根目录（向上 3 级：common/atk/tests -> 仓库根）
+  HOST_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+  OP_TEST_DIR="${HOST_REPO_ROOT}/tests/atk/${OP}"
+
+  # 默认 atk 配置 / executor 文件名按算子名推导
+  [[ -n "$NPU_ATK_CONFIG" ]] || NPU_ATK_CONFIG="./atk_${OP}.json"
+  [[ -n "$NPU_EXECUTOR" ]] || NPU_EXECUTOR="./executor_${OP}.py"
+
+  # 预检：executor 与 atk 配置文件必须存在
+  HOST_EXECUTOR="${OP_TEST_DIR}/executor_${OP}.py"
+  [[ -f "$HOST_EXECUTOR" ]] || die "未找到 executor 文件：${HOST_EXECUTOR}（仓库根目录：${HOST_REPO_ROOT}）"
+  HOST_ATK_CONFIG="${OP_TEST_DIR}/${NPU_ATK_CONFIG#./}"
+  [[ -f "$HOST_ATK_CONFIG" ]] || die "未找到 atk 配置：${HOST_ATK_CONFIG}（仓库根目录：${HOST_REPO_ROOT}）"
+
+  log_info "action=npu：在 NPU 机器对接远程 GPU server 跑精度对拍"
+  log_info "算子：${OP}"
+  log_info "NPU 设备号：${NPU_DEVICE_ID}"
+  log_info "GPU 远程 server：${GPU_HOST}:${GPU_HOST_PORT}（参考节点 devices=${NPU_GPU_DEVICE_ID}）"
+  log_info "ATK 路径：${ATK_BIN}"
+  log_info "输出目录：${NPU_OUTPUT_PATH}"
+  log_info "task=${NPU_TASK} bm_device=gpu mt=${NPU_MT} timeout=${NPU_TASK_TIMEOUT}"
+
+  mkdir -p "$NPU_OUTPUT_PATH"
+  cd "$OP_TEST_DIR"
+
+  "$ATK_BIN" \
+    node \
+      --name npu_dut \
+      --backend npu \
+      --devices "$NPU_DEVICE_ID" \
+      --output_path "$NPU_OUTPUT_PATH" \
+    node \
+      --name gpu_reference \
+      --backend gpu \
+      --host "$GPU_HOST" \
+      --port "$GPU_HOST_PORT" \
+      --devices "$NPU_GPU_DEVICE_ID" \
+      --is_compare true \
+      --output_path "$NPU_OUTPUT_PATH" \
+    task \
+      -c "$NPU_ATK_CONFIG" \
+      --task "$NPU_TASK" \
+      --bm_device gpu \
+      -p "$NPU_EXECUTOR" \
+      --syc_dataset \
+      -mt "$NPU_MT" \
+      -to "$NPU_TASK_TIMEOUT"
+
+  log_info "完成精度对拍"
+  exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# gpu_server_stop：停止并删除容器
+# ---------------------------------------------------------------------------
+if [[ "$ACTION" == "gpu_server_stop" ]]; then
   log_info "停止并删除容器：${GPU_CONTAINER}"
   docker rm -f "$GPU_CONTAINER" >/dev/null 2>&1 || true
   log_info "容器 ${GPU_CONTAINER} 已删除"
@@ -336,7 +521,7 @@ if [[ "$ACTION" == "stop" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# start：启动容器 + ATK server
+# gpu_server_start：启动容器 + ATK server
 # ---------------------------------------------------------------------------
 [[ -n "$GPU_REPO_ROOT" ]] || die "必须传入 -gpu_repo_root=<容器内仓库根目录>"
 

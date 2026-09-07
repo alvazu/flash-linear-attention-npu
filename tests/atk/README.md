@@ -191,7 +191,7 @@ bash tests/atk/common/gpu_server.sh -op=<op_name> \
   -gpu_container=<容器名> -gpu_repo_root=<容器内仓库根目录>
 
 # 停止并删除容器
-bash tests/atk/common/gpu_server.sh -op=<op_name> -action=stop
+bash tests/atk/common/gpu_server.sh -op=<op_name> -action=gpu_server_stop
 ```
 
 容器只暴露物理 GPU 6 时，容器内逻辑设备为 0；`-gpu_device_id` 控制物理卡号。
