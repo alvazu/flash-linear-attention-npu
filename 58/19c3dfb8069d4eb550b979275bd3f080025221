@@ -1,0 +1,14 @@
+.github/workflows/ci.yml
+  h_0b241a6196643c 336-386
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "5819c3dfb8069d4eb550b979275bd3f080025221",
+  "prompts": {},
+  "humans": {
+    "h_0b241a6196643c": {
+      "author": "alvazu <x@wire.me>"
+    }
+  }
+}
