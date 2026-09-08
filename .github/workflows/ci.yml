@@ -506,6 +506,9 @@ jobs:
           proxyoff
           
           echo "代理已关闭"
+          # 清理 Git 代理配置
+          git config --global --unset http.proxy
+          git config --global --unset https.proxy
 
       - name: 使用可信 CI 脚本
         run: |
