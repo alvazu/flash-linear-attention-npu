@@ -324,11 +324,6 @@ jobs:
         continue-on-error: true
         timeout-minutes: 10
         uses: actions/checkout@v4
-        env:
-          http_proxy: http://127.0.0.1:7897
-          https_proxy: http://127.0.0.1:7897
-          no_proxy: localhost,127.0.0.1
-          GIT_HTTP_POST_BUFFER: 524288000
         with:
           repository: ${{ github.repository }}
           ref: refs/heads/${{ needs.prepare.outputs.base_ref }}
