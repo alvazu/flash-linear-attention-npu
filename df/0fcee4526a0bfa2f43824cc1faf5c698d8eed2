@@ -1,0 +1,32 @@
+.github/workflows/ci.yml
+  s_b8bc8fa4f197ac::t_7827aea3452b4e 404
+  h_0b241a6196643c 403,413
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "df0fcee4526a0bfa2f43824cc1faf5c698d8eed2",
+  "prompts": {},
+  "humans": {
+    "h_0b241a6196643c": {
+      "author": "alvazu <x@wire.me>"
+    }
+  },
+  "sessions": {
+    "s_b8bc8fa4f197ac": {
+      "agent_id": {
+        "tool": "trae-code-edit",
+        "id": "ai_tab-20260908103310010000078192052186C",
+        "model": "default"
+      },
+      "human_author": "alvazu <x@wire.me>",
+      "custom_attributes": {
+        "tool": "trae-code-edit",
+        "external_session_id": "20260908103310010000078192052186C",
+        "edit_kind": "file_edit",
+        "source_scene": "cue",
+        "client_type": "ide"
+      }
+    }
+  }
+}
