@@ -184,7 +184,6 @@ bash tests/atk/run_test_cpu.sh -op=causal_conv1d
 
 ### 全量精度执行
 
-
 精度与 NaN 检测显式启动本机 NPU DUT 节点和 CPU 高精度 golden 节点；CPU 节点不再
 提供同精度参考，精度标准统一为 `mixed_tolerance_bm`：
 
