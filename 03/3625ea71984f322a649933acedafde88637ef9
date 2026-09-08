@@ -1,0 +1,14 @@
+tests/atk/README.md
+  h_0b241a6196643c 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "033625ea71984f322a649933acedafde88637ef9",
+  "prompts": {},
+  "humans": {
+    "h_0b241a6196643c": {
+      "author": "alvazu <x@wire.me>"
+    }
+  }
+}
