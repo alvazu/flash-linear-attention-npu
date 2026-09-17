@@ -664,6 +664,8 @@ globalThis.core = {
         ops="",
         workflow_run_status="completed",
         run_attempt="1",
+        base_ref="main",
+        dispatch_token="prepare-test-dispatch-token",
     ):
         sha = "a" * 40
         wrapper = """
@@ -709,12 +711,13 @@ globalThis.github = {
     pulls: {
       get: async () => ({ data: {
         draft: false,
-        base: { ref: 'main' },
+        base: { ref: process.env.PREPARE_BASE_REF },
         head: { sha: process.env.PREPARE_HEAD_SHA, repo: { full_name: 'example/repo' } },
       } }),
     },
     repos: {
       createCommitStatus: async (payload) => record('status', payload),
+      get: async () => ({ data: { default_branch: 'main' } }),
       getBranch: async () => ({ data: { commit: { sha: 'c'.repeat(40) } } }),
       getCollaboratorPermissionLevel: async () => ({ data: { permission: 'admin' } }),
       listCommitStatusesForRef: statusEndpoint,
@@ -741,6 +744,8 @@ globalThis.core = {
             env.update(
                 {
                     "NPU_CI_WORKFLOW_SHA": "b" * 40,
+                    "NPU_CI_DISPATCH_TOKEN": dispatch_token,
+                    "PREPARE_BASE_REF": base_ref,
                     "PREPARE_HEAD_SHA": sha,
                     "PREPARE_MODE": mode,
                     "PREPARE_OPS": ops,
@@ -1026,6 +1031,55 @@ globalThis.core = {
         self.assertEqual(outputs["should_run"], "true")
         pending = [item for item in records if item["kind"] == "status"]
         self.assertEqual(len(pending), len(STATUS_CONTEXTS))
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required")
+    def test_prepare_forwards_non_default_branch_pr(self):
+        completed, records = self._run_prepare_script([], base_ref="v26.9.0")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        outputs = {
+            item["payload"]["name"]: item["payload"]["value"]
+            for item in records
+            if item["kind"] == "output"
+        }
+        self.assertEqual(outputs["should_run"], "false")
+        self.assertEqual(outputs["forward_ref"], "v26.9.0")
+        self.assertEqual(outputs["base_ref"], "v26.9.0")
+        self.assertNotIn("base_sha", outputs)
+        self.assertNotIn("trusted_ci_sha", outputs)
+        statuses = [item for item in records if item["kind"] == "status"]
+        self.assertEqual(statuses, [])
+        comments = [
+            item["payload"]["body"]
+            for item in records
+            if item["kind"] == "comment"
+        ]
+        self.assertTrue(any("v26.9.0" in body and "转发" in body for body in comments))
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required")
+    def test_prepare_fails_without_dispatch_token_for_non_default_branch(self):
+        completed, records = self._run_prepare_script(
+            [],
+            base_ref="v26.9.0",
+            dispatch_token="",
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        failures = [
+            item["payload"]
+            for item in records
+            if item["kind"] == "failed"
+        ]
+        self.assertTrue(
+            any("NPU_CI_DISPATCH_TOKEN" in message for message in failures),
+            failures,
+        )
+        outputs = {
+            item["payload"]["name"]: item["payload"]["value"]
+            for item in records
+            if item["kind"] == "output"
+        }
+        self.assertNotIn("forward_ref", outputs)
+        statuses = [item for item in records if item["kind"] == "status"]
+        self.assertEqual(statuses, [])
 
     def test_publisher_writes_final_status_after_stage_statuses(self):
         script = self.finalize_script

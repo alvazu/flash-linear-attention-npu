@@ -60,6 +60,7 @@ jobs:
       ci_mode: ${{ steps.prepare.outputs.ci_mode }}
       ops: ${{ steps.prepare.outputs.ops }}
       comment_id: ${{ steps.prepare.outputs.comment_id }}
+      forward_ref: ${{ steps.prepare.outputs.forward_ref }}
     steps:
       - name: 解析 PR 和 CI 参数
         id: prepare
@@ -67,6 +68,7 @@ jobs:
         env:
           NPU_CI_WORKFLOW_SHA: ${{ github.workflow_sha }}
           NPU_CI_RUN_ATTEMPT: ${{ github.run_attempt }}
+          NPU_CI_DISPATCH_TOKEN: ${{ secrets.NPU_CI_DISPATCH_TOKEN }}
         with:
           github-token: ${{ github.token }}
           script: |
@@ -212,6 +214,48 @@ jobs:
             });
             if (pr.draft) {
               core.setFailed(`PR #${prNumber} 仍是草稿，请先标记为 ready for review 后再运行 NPU CI。`);
+              return;
+            }
+            const { data: repository } = await github.rest.repos.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            if (pr.base.ref !== repository.default_branch) {
+              // issue_comment 事件只会执行默认分支上的 workflow 文件。base 不是默认分支的
+              // PR（例如 v26.9.0）在此转发到其 base 分支上的 NPU CI（workflow_dispatch），
+              // 由该分支自己的 workflow、门禁 context 和 runner 配置完成验证。
+              if (!process.env.NPU_CI_DISPATCH_TOKEN) {
+                commentId = await upsertComment(
+                  pr,
+                  [
+                    `无法启动 NPU CI：该 PR 的 base 分支是 \`${pr.base.ref}\`，需要转发到该分支的 NPU CI workflow，但仓库未配置 \`NPU_CI_DISPATCH_TOKEN\` secret。`,
+                    '',
+                    '请仓库管理员创建具备 `actions:write` 权限的 PAT 并配置为仓库 secret `NPU_CI_DISPATCH_TOKEN` 后重新触发。',
+                  ].join('\n')
+                );
+                core.setFailed('缺少 NPU_CI_DISPATCH_TOKEN secret，无法转发非默认分支 PR 的 NPU CI。');
+                return;
+              }
+              commentId = await upsertComment(
+                pr,
+                [
+                  `该 PR 的 base 分支是 \`${pr.base.ref}\`，NPU CI 将转发到该分支自己的 CI 流程执行。`,
+                  '',
+                  `- 模式：\`${ciMode}\``,
+                  `- 触发人：@${actor}`,
+                  `- 说明：评论触发只会执行默认分支 workflow，本次请求已转发到 \`${pr.base.ref}\` 分支的 NPU CI`,
+                  ops ? `- 算子：\`${ops}\`` : '',
+                ].filter(Boolean).join('\n')
+              );
+              core.setOutput('should_run', 'false');
+              core.setOutput('forward_ref', pr.base.ref);
+              core.setOutput('pr_number', String(prNumber));
+              core.setOutput('base_ref', pr.base.ref);
+              core.setOutput('head_repo', pr.head.repo.full_name);
+              core.setOutput('head_sha', pr.head.sha);
+              core.setOutput('ci_mode', ciMode);
+              core.setOutput('ops', ops);
+              core.setOutput('comment_id', commentId);
               return;
             }
             const { data: baseBranch } = await github.rest.repos.getBranch({
@@ -371,6 +415,39 @@ jobs:
             core.setOutput('ci_mode', ciMode);
             core.setOutput('ops', ops);
             core.setOutput('comment_id', commentId);
+
+      - name: 转发非默认分支 PR 的 NPU CI
+        if: steps.prepare.outputs.forward_ref != ''
+        uses: actions/github-script@v8
+        env:
+          NPU_CI_FORWARD_REF: ${{ steps.prepare.outputs.forward_ref }}
+          NPU_CI_FORWARD_PR_NUMBER: ${{ steps.prepare.outputs.pr_number }}
+          NPU_CI_FORWARD_CI_MODE: ${{ steps.prepare.outputs.ci_mode }}
+          NPU_CI_FORWARD_OPS: ${{ steps.prepare.outputs.ops }}
+        with:
+          # GITHUB_TOKEN 触发的 workflow_dispatch 不会启动新的 workflow run，
+          # 转发必须使用 NPU_CI_DISPATCH_TOKEN（PAT 或 GitHub App token）。
+          github-token: ${{ secrets.NPU_CI_DISPATCH_TOKEN }}
+          script: |
+            const forwardRef = process.env.NPU_CI_FORWARD_REF;
+            const forwardPrNumber = process.env.NPU_CI_FORWARD_PR_NUMBER;
+            const forwardCiMode = process.env.NPU_CI_FORWARD_CI_MODE || 'quick';
+            const forwardOps = (process.env.NPU_CI_FORWARD_OPS || '').trim();
+            const dispatchInputs = {
+              pr_number: String(forwardPrNumber),
+              ci_mode: forwardCiMode,
+            };
+            if (forwardOps) {
+              dispatchInputs.ops = forwardOps;
+            }
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'ci.yml',
+              ref: forwardRef,
+              inputs: dispatchInputs,
+            });
+            core.notice(`PR #${forwardPrNumber} 的 NPU CI 已转发到分支 ${forwardRef}。`);
 
   ascend-npu:
     name: NPU CI 分项执行 (${{ matrix.name }})
