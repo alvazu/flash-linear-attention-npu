@@ -66,6 +66,19 @@ PR 合入前，当前 head commit 的 7 个 NPU 状态和自动执行的 `CI 契
 
 如果当前 commit 的 7 个 aggregate context 已由同一次 A2+A5 run 通过，重复触发会被跳过，不会再次占用 NPU。同一 PR 的触发通过 workflow concurrency 串行化；同一 commit 已有 A2+A5 NPU CI 处于排队或运行中时，重复评论只会更新机器人评论为“已在运行”，不会启动新的 runner job。runner 宿主机还会用 `/tmp/fla-npu-ci-npu-<id>.lock` 对物理 NPU 加锁，避免多个任务抢同一张卡。
 
+### 非默认分支 PR 的 NPU CI 转发
+
+GitHub 的 `issue_comment` 事件只会执行默认分支（`main`）上的 workflow 文件。base 不是 `main` 的 PR（例如 `v26.9.0`、`v26.6.0`），在评论 `/run-npu-ci` 或通过 `workflow_dispatch` 指定 PR 编号时，默认分支的 `NPU CI` 会自动通过 `workflow_dispatch` 转发到该 PR base 分支上的同名 workflow，由该分支自己的 CI 配置、门禁 context 和 runner 完成验证，不会执行 main 的 A2+A5 流程。
+
+转发依赖仓库 secret `NPU_CI_DISPATCH_TOKEN`：`GITHUB_TOKEN` 触发的 `workflow_dispatch` 不会启动新的 workflow run，必须配置一个具备 `actions:write` 权限、且所属账号为仓库 Admin 的 PAT 或 GitHub App token。未配置该 secret 时，非默认分支 PR 的触发会在 PR 评论和 Actions 日志中明确报错。
+
+非默认分支使用各自的门禁 context（例如 `v26.9.0`、`v26.6.0` 分支为 `NPU CI / 手动验证`、`NPU CI / 精度检查`），并通过分支保护 profile 应用：
+
+```sh
+GITHUB_TOKEN=<admin-token> scripts/github/apply_branch_protection.sh main          # main 分支（A2+A5 门禁）
+GITHUB_TOKEN=<admin-token> scripts/github/apply_branch_protection.sh v26.9.0 legacy # 手动验证 + 精度检查门禁
+```
+
 仓库管理员应将上述 7 个 context 和 `CI 契约测试` 都配置为 `main` 分支必需状态检查。分项 context 使用带 `A2+A5` 的独立名称，避免旧版状态或 A2-only 历史成功状态被误认为已经覆盖当前门禁。`CI 契约测试` 在普通 GitHub-hosted runner 上自动执行 Python、Node 状态发布逻辑及分阶段调度测试，用于保护 CI 代码本身。
 
 NPU CI 的 self-hosted runner、Docker 镜像、`--privileged`、触发方式和排障步骤见 [`Fla-npu仓CI部署教程.md`](Fla-npu仓CI部署教程.md)。
