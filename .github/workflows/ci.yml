@@ -10,6 +10,8 @@
 
 name: NPU CI
 
+run-name: 'NPU CI · PR #${{ inputs.pr_number }}'
+
 on:
   workflow_dispatch:
     inputs:
