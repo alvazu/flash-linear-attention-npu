@@ -78,6 +78,9 @@ public:
 
     __aicore__ inline void Process()
     {
+#if !(defined(__CCE_AICORE__) && __CCE_AICORE__ == 310)
+        ProcessA2A3();
+#else
         if (core_ >= args_.tiling.usedCoreNum || args_.tiling.usedCoreNum == 0) {
             return;
         }
@@ -156,9 +159,50 @@ public:
                 }
             }
         }
+#endif
     }
 
 private:
+#if !(defined(__CCE_AICORE__) && __CCE_AICORE__ == 310)
+    __aicore__ inline void ProcessA2A3()
+    {
+        const uint32_t cores = args_.tiling.usedCoreNum;
+        if (cores == 0 || core_ >= cores) {
+            return;
+        }
+        const uint32_t cg = args_.tiling.headsPerPartition;
+        const uint32_t partitions = args_.tiling.valueHeadNum / cg +
+            (args_.tiling.valueHeadNum % cg != 0);
+        const uint64_t chunks = args_.tiling.isVarLen
+            ? args_.tiling.totalChunks
+            : static_cast<uint64_t>(args_.tiling.batch) * args_.tiling.totalChunks;
+        const uint64_t total = chunks * partitions;
+        uint32_t outputSlot = 0;
+        // Stage 0 is Cube-only. Keep the L0 credits across head groups and chunks.
+        for (uint64_t work = core_; work < total; work += cores) {
+            FinalizeChunk chunk{};
+            if (!ResolveChunk(args_, static_cast<uint32_t>(work / partitions), chunk)) {
+                continue;
+            }
+            const uint32_t headBegin = static_cast<uint32_t>(work % partitions) * cg;
+            const uint32_t remaining = args_.tiling.valueHeadNum - headBegin;
+            const uint32_t active = remaining < cg ? remaining : cg;
+            for (uint32_t localHead = 0; localHead < active; ++localHead) {
+                StageC0(chunk, headBegin + localHead, localHead, outputSlot);
+                outputSlot ^= 1;
+            }
+        }
+        for (uint32_t plane = 0; plane < 2; ++plane) {
+            if (l0OperandInFlight_[plane]) {
+                WaitFlag<HardEvent::M_MTE1>(plane);
+            }
+            if (l0OutputInFlight_[plane]) {
+                WaitFlag<HardEvent::FIX_M>(plane);
+            }
+        }
+    }
+#endif
+
     template <typename TileCopy, typename LayoutB>
     __aicore__ inline void LoadOperands(GlobalTensor<Element> &sourceA,
                                         GlobalTensor<Element> &sourceB,
