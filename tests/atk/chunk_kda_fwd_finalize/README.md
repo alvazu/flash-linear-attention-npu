@@ -130,7 +130,7 @@ chunk/head 分核：最终固定 `CG=1`，`Nwork=Nbase*HV`，grid-stride 遍历�
 本次 A2 全部精度 case 0–199 与 `_mss.json` 0–11 均使用
 `USE_AIV_INPUT_MOVER=false`；前述 MIX 模板覆盖属于 A5。
 
-### 正常构建性能与 CG 选择
+### 历史单槽 CG1 消融：CG 选择
 
 实机为 `root@192.168.9.234` 的 device 1，Ascend910B3，20 AIC/40 AIV、
 192 MiB L2，CANN 9.1.0、Python 3.10、torch 2.12.0+cu130、
@@ -275,3 +275,177 @@ mssanitizer --tool=memcheck --log-level=info --log-file="$FINALIZE_MSS_LOG" -- \
   --task run -p tests/atk/chunk_kda_fwd_finalize/executor_chunk_kda_fwd_finalize.py \
   --mssanitizer -msl "$FINALIZE_MSS_LOG" -s 0 -e 12 -sp -to 60
 ```
+
+## 2026-10-13 A2/A3 CG1 两份 L1 输入预取
+
+两槽设计基于 `a46da76275a40e8f1236ab6808d1e482f0832a43`，即上一节已经采用的 CG1。
+当前性能结论以最初 `bead79ae` 原版到当前两槽正常包的同卡对照为准；
+单槽 CG1 对照作为历史消融保留。只修改 A2/A3 Cube 内部：固定 CG1，L1 input slot 0/1
+分别占 `[0,72)` / `[72,144)` KiB。每槽四项 BF16 输入按 Q/H/A/V 原物理布局搬入；
+下一有效 head 的 MTE2 搬运提前提交，当前 head 消费本槽；两项 L1→L0 读取完成后
+发布本槽 free，下代覆盖前等待。ready/free 按槽独立使用 ID0/1，首次使用不等待 free，
+尾部不多预取，最后 drain 所有真实 credit。槽随本核有效消费轮转，不用全局 work 奇偶。
+两项 BF16 MMAD 仍先初始化、再累加同一 FP32 L0C；一次 Fixpipe 转 BF16 直接写 GM。
+Stage0、CG1 分核、host、ABI、GM 字节数、L0 布局、四种输出 layout/state 分支保持定义。
+
+### 当前性能：最初原版到两槽预取
+
+原版提交为 `bead79ae45fca5d10a8414b215d4f762cc66538d`，正常包 `baseline.run`
+SHA256 为 `f799fd1c8cb59c365124d7bab7bac10c7c1afeba1463da5dc17f5c2902ccefc5`；
+当前两槽包为后文的 `candidate_normal.run`。本轮两版本均在同一
+`/data/huangjunzhe/GDN/work/kda_finalize_prefetch_env`、device5 Ascend910B3
+串行安装，每次核对全部6个库/.o，启动新进程测量。
+冻结perf JSON、executor及common executor与原版提交逐字节一致；
+`--disable_id_seed` 使用原default_seed，GM init off、CPU单线程、正常包无trace/sanitizer。
+ATK `--performance_data 3,10,10 --save_data profile`：预热3次，采样10次，保留全部10次；
+统计目标 `ChunkKdaFwdFinalize` 的 `op_summary Task Duration(us)` 中位数。
+
+| case | B/HV/T、场景 | 最初原版 µs | 当前两槽预取 µs | 耗时降低 |
+| ---: | --- | ---: | ---: | ---: |
+| 0 | 1/16/11264 dense | 238.74 | 228.51 | 4.28% |
+| 1 | 1/32/11264 dense | 523.78 | 463.45 | 11.52% |
+| 2 | 1/96/8192 dense | 1187.96 | 1003.03 | 15.57% |
+| 3 | 1/96/16384 varlen | 2250.04 | 1991.75 | 11.48% |
+| 4 | 2/16/11264 dense | 523.35 | 461.28 | 11.86% |
+| 5 | 4/96/128 dense | 36.93 | 22.43 | 39.26% |
+| 6 | 1/32/160 dense | 7.64 | 5.93 | 22.38% |
+| 7 | 6/6/1084 dense | 34.63 | 18.75 | 45.86% |
+| 8 | 1/8/32768 dense | 378.44 | 341.63 | 9.73% |
+| 9 | 1/32/65536 varlen | 3011.46 | 2658.08 | 11.73% |
+
+原版与当前均为本轮fresh全10用例，每例各10个有效目标样本，10/10任务成功，
+profile完整性检查通过；两个run及pair退出码均0，无缺样、补测或删除离群点。
+所有当前样本均低于对应原版的最小样本；这只描述本轮采样范围。
+case0当前228.51us如实记录，历史消融的160.65us保留在下一节。
+目标均为AI_CORE、BlockDim20、MixBlockDim0、AIV0、四项主输入及输出BF16，
+varlen辅助元数据INT64。此10case口径为BNSD/KV，A3尚无实机性能证据。
+
+新证据根为 `/data/huangjunzhe/GDN/work/kda_finalize_original_compare_20261013`：
+`freeze_provenance.json` 保存原版源码/旧build/wheel/run关联与两次测试资产核对；
+`original_vs_current_perf.json`、`original_performance/perf_summary.json`、
+`candidate_performance/perf_summary.json` 保存各例全样本、波动及原CSV路径；
+`final_validation.json` 核对双方原始XLSX、全部6二进制和退出码。
+全卡进程快照保留了其他用户任务；device5启动前空闲、结束后恢复候选正常包并释放。
+
+### 历史单槽 CG1 消融
+
+实机 A2 Ascend910B3 device5，20 AIC/40 AIV；CANN9.1.0、ATK26.8.8、
+Python3.10.20、torch2.12.0+cu130、torch_npu2.12.0。两版本在独立
+`/data/huangjunzhe/GDN/work/kda_finalize_prefetch_env` 串行安装并核对全部6库/.o。
+冻结perf JSON/default_seed/input/golden/阈值均未改；GM init off、CPU单线程、
+3次warm-up、每case10次采样，正常包无trace/sanitizer。
+下表仅取目标 `aclnnChunkKdaFwdFinalize` 的 `op_summary Task Duration(us)` 中位数。
+原始每case10个样本、min/max/标准差和CSV路径完整保留；所有候选样本均低于
+对应基线的最小样本，收益超过该配对轮次的采样范围。全部均为AI_CORE、BlockDim20、
+MixBlockDim0、AIV0，四项主输入/输出BF16；varlen辅助元数据INT64。
+这些10个性能case使用BNSD/KV，不能把其加速比外推到全部layout/state或A3。
+
+| case | B/HV/T、场景 | 原 CG1 µs | CG1 两槽预取 µs | 耗时降低 |
+| ---: | --- | ---: | ---: | ---: |
+| 0 | 1/16/11264 dense | 226.26 | 160.65 | 29.00% |
+| 1 | 1/32/11264 dense | 508.94 | 463.90 | 8.85% |
+| 2 | 1/96/8192 dense | 1107.14 | 996.98 | 9.95% |
+| 3 | 1/96/16384 varlen | 2196.73 | 2014.57 | 8.29% |
+| 4 | 2/16/11264 dense | 508.35 | 461.60 | 9.20% |
+| 5 | 4/96/128 dense | 36.53 | 22.48 | 38.46% |
+| 6 | 1/32/160 dense | 7.18 | 5.92 | 17.55% |
+| 7 | 6/6/1084 dense | 30.14 | 18.86 | 37.43% |
+| 8 | 1/8/32768 dense | 370.98 | 332.88 | 10.27% |
+| 9 | 1/32/65536 varlen | 2952.98 | 2675.95 | 9.38% |
+
+首轮候选case0包含3个毫秒级离群样本，case1缺少目标kernel记录；profiler明确
+报告缺少ascend_task.db/AscendTask。该轮严格统计exit1，保留完整原始日志，未把
+ATK任务SUCCESS当成有效采样。只对0/1补做baseline→candidate同条件配对，双方
+各10个完整目标样本；表中0/1取该补配对，2–9取原始有效轮次。
+这不删除离群点以凑中位数，也不混用不同卡或san/trace包。配对之外的运行波动仍可能存在。
+
+### 精度、同步及正式门禁
+
+| 检查 | 实际结果 |
+| --- | --- |
+| 冻结200用例 × offset0/100000/200000 | 600/600 mixed_tolerance_bm通过，0执行失败 |
+| 与最初bead79原版直接逐位比较 | 相同BF16输入/属性600组；300,833,280输出元素，原始16位差异0，signed-zero差异0，非有限0 |
+| 与历史单槽CG1直接逐位比较 | 相同BF16输入/属性600组；300,833,280输出元素，原始16位差异0，非有限0 |
+| 正式accuracy / performance | 原200/200及10/10执行通过，逐项读取原始XLSX |
+| 正式determinism | 12/12；每条50次执行、49次精确比较，共600次执行/588次比较 |
+| 独立无trace sanitizer memcheck | 12/12 memory Pass；目标kernel Start12/Finished12/ERROR0 |
+| 独立workspace执行trace | 36/36精度通过；L1/L0 ready/free事件账本全部退出归零 |
+| Stable Python入口 | dense BSND/KV与packed TND/VK两项matched_ratio=1、abs/ULP失败0 |
+| HostUT | g++17 -Wall -Wextra -Wpedantic -Werror -O2，编译/运行0，assert启用 |
+| A5隔离 | Cube/Vector预处理2787 tokens与基线完全相同，SHA256 3aac387c…b3c3637 |
+| A3 | ascend910_93构建通过；没有A3实机精度/性能证据 |
+
+最初原版与当前候选的已保存BF16输出直接按case/seed比较，600组输入tensor的
+dtype/shape/原始字节与全部typed属性均一致；四种layout、两种state轴顺序、
+dense/varlen及尾M均覆盖。直接比较结果见新证据根
+`bitwise/comparison/summary.json`，600/600通过。
+
+历史单槽CG1逐位比较的基准为前次已保存并核过包/输入的原CG1输出；新候选600组另保存完整
+input.bin和BF16输出，再按case/seed核每个输入tensor的原始字节与全部属性相同。
+四种layout、两种state_v_first、dense/varlen及尾M均覆盖，不只做容差比较。
+确定性XLSX保存逐caseaggregate True；次数由dc_loop_nums50及冻结ATK源码
+的循环和torch.equal/NaN-mask比较核定，不声称报告含588条逐比较明细。
+Excel32767字符导致长case元数据截断时，核对可见header/完整输入前缀与实际调用JSON；
+精度、确定性及内存结果列未截断。没有修改输入值域或阈值。
+
+trace在独立repo/environment插桩，正式正常源码的41条同步语句序列未变；
+覆盖0–7、80–91、192–199，以及HV1/T2561×4layout×2state共36条。
+HV1实例的core0实际work[0,20,40]、inputSlot[0,1,0]、末M1，其余19核各两任务；
+single-task只用input0，尾部只drain实际使用的槽。trace只证明实际任务/事件
+顺序和已完成等待，不是硬件pipe时间线。trace成功后torch_npu退出handler
+打印ERR99999，原异常未记录，具体触发原因不确定；原plog无ERROR、HBM分配/释放
+160/160、设备关闭成功、进程退出和device6空闲均已核对。原日志及调查完整保留。
+
+公开入口额外补测第一次临时脚本将current device设5而输入仍指定npu1，触发跨设备
+GM地址错误；统一为device5后两条通过。只修验证脚本，候选kernel未改，失败日志保留。
+
+### 搬运等待与证据边界
+
+本方案解除单L1槽复用对下一输入的串行约束，减少输入pipe空档的机会；总GM字节数
+不变，不能只凭“MTE2 bound”保证收益。新证据根的 `current_pipeline_analysis.json`
+仅使用本轮原版/当前fresh对照的100条当前正常包原始记录：大shape
+case0/1/2/3/4/8/9的MTE2活动比例中位数为99.05%–99.9%；最短case6的
+Scalar为57.8%、MTE2为55.05%，活动比例允许重叠，不能相加作为总耗时。
+同一原始行/共同分母下，90/100条满足MTE2_time+MAC_time>total_time；
+case6的10条均不满足，不能由此推断其完全没有重叠。
+这些busy计数器支持大shape受搬运pipe占用主导的判断，不定位命名free事件的等待，
+也未证明HBM带宽饱和、bank冲突被消除或带宽提升。L1并发竞争也可能增加MTE1时间。
+A2工具当前无法提供950专属的真上板逐指令时间线；TimelineDetail是采输入的仿真
+重放。执行trace和aggregate busy counters不定位具体跨head时刻，不据此宣称
+某个slot的实机时间重叠已被直接观测。
+
+### 原始证据与构建
+
+两槽构建、历史CG1消融、精度及门禁证据在
+`/data/huangjunzhe/GDN/work/kda_finalize_prefetch_20261013`；
+最初原版到当前的fresh性能、直接逐位比较及当前pipe分析补充在
+`/data/huangjunzhe/GDN/work/kda_finalize_original_compare_20261013`。
+正常A2包 `candidate_normal.run` SHA256
+`e07fcc2c42487f3b67d216c515d78eb7a6c4081cc91f069e2ff5a18c7189562a`；
+A3包 `a3_candidate.run` SHA256
+`adbd652514201fdbf0a1809a6ba8d38074f40cd1fc11bd4d2b834d09c05ae025`。
+正常、trace、san包分别在独立env安装，实际全部6个库/.o与对应构建/解包一致；
+san的生产kernel源文件与正常包逐文件哈希相同。
+
+`perf_comparison.json`、`perf_selection_manifest.json`、`baseline/candidate_perf_selected.json`
+保存配对数据及采样选择；`accuracy/candidate/seed_sweep_summary.json`、
+`bitwise/comparison/summary.json`、`formal_normal_validation.json`、
+`formal_mss_validation.json`、`prefetch_trace_evidence_summary.json`、
+`a5_token_review.json`、`a3_build_summary.json`、`host_ut_validation.json`
+保存各项真实检查。所有失败尝试及工具日志同时保留。
+
+历史CG1消融的补充同口径 pipe 活动证据：`pipe_overlap_validation.json` 已逐条核对正常 dev5
+性能 case2/7/9 两版本各10条原始记录，以及实际安装 CANN parser 的源码/哈希。
+本机每条的 total 与 pipe 时间使用共同分母20×1800MHz；候选30/30条均满足
+MTE2_time+MAC_time>total_time，支持至少部分被计数的搬运/计算活动重叠。
+这不是某个core/slot的逐指令时间线，也不是命名事件等待时长；基线和不超过total
+不能证明完全没有重叠。没有把分别求出的中位数相加作为逐样本证明。
+
+独立 MemoryDetail 的尝试不计入结果：device5 后续被他人任务占用时 preflight拒绝，
+另卡尝试因临时ATK loop_nums10生成重编号/变更seed被取消。已保留exit4/143及日志，
+未将其称为同输入重复测量。正常 op_summary 的配对耗时和共同归一化活动计数已足够
+完成本轮判断；没有有效 MemoryDetail 对比，不据此宣称bank冲突被消除或带宽提升。
+
+最终两次独立MemoryDetail尝试均由本任务主动取消（exit143）；取消原因/实际seed保留，
+没有有效baseline/candidate MemoryDetail CSV配对。只结束本任务进程，其他任务未动。
+性能环境已恢复候选正常包，完整6对象一致性再次通过，device5/6本任务进程已退出。
