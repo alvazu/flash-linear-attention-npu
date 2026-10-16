@@ -95,6 +95,77 @@ atk node --backend npu --devices 0 -o ./atk_output/accuracy \
 任意 case 未通过时先使用 `--save_data output` 保留实值，再定位
 shape/索引/尾块问题或执行精度复检，不能改输入 range 或阈值掩盖失败。
 
+### GPU 双标杆
+
+executor 除 NPU DUT 与 CPU 双标杆外，还支持把参考节点放到远端 GPU
+（与 `pre_process_fwd_kernel_merged` 同范式，按 `is_benchmark_task`
+区分角色，不按算子名分支）：
+
+| 角色 | 触发条件 | 执行内容 |
+| --- | --- | --- |
+| DUT | `device ∈ {npu, pyaclnn}` | 本 executor 的窄 aclnn 直调适配器（不变） |
+| 高精度 golden | `device = gpu` 且 `is_benchmark_task=True` | `scripts/gpu.py` 的 FP64 torch 真值（镜像 `run_cpu` 数学，设备跟随输入；输出转 FP32 载荷进 `gpu_benchmark` 目录，供 `mixed_tolerance_bm` 的 BF16 DUT / FP32 golden 对比较） |
+| 同精度标杆 | `device = gpu` 且 `is_benchmark_task=False` | `scripts/gpu.py` 的 `contract` 或 `upstream_strict`，均为 BF16 输入 / FP32 累加 / BF16 输出；任何执行失败直接报错，不自动切换实现 |
+
+GPU ATK **服务进程启动前**设置 `KDA_FINALIZE_GPU_REFERENCE`（仅在 NPU 客户端设置不保证传给远端服务）：
+
+- `contract`（默认）：改写 Triton kernel，消费完整 Aqk，固定 BK64/BV128/4warps/3stages。保留完整矩阵接口；本 executor 初始化时会统一清零 Aqk 上三角，结果标记 `gpu_contract_adapted_triton`；不能称为原版 GPU 算子性能。
+- `upstream_strict`：直接导入 GPU 环境中 `fla.ops.gla.chunk.chunk_gla_fwd_o_gk`，解开 dispatch 装饰器调用其原始 Triton 实现，保留原版 autotune。传 `q=qg_scaled`、FP32 `g=0`、`scale=1`、`A=aqk`、`v=v_new` 和原 h；结果标记 `gpu_upstream_chunk_gla_fwd_o_gk`，记录真实源码路径和 SHA256。
+
+上游 kernel 使用下三角。现在 `FunctionApi.init_by_input_data` 在所有 CPU/GPU/NPU 角色上统一原位处理 Aqk：按实际 `cu_seqlens` 的每段序列、每个 64 行 chunk 重置局部行号，清零 `j>r`，包括尾块无效列；保留对角线、下三角及其余输入原值。处理在 GPU control 准备前完成，设备上只在初始化同步一次，`__call__` 不执行 mask。继续使用原有 JSON 和生成器即可，不增加用例。GPU `upstream_strict` 的只读检查保留，用于防止无效输入进入上游。
+
+ATK 的随机生成规则不变，各角色初始化时通过同一 executor 得到相同下三角数据，结果元数据记录 `aqk_structure=chunk_lower_triangular`。这改变了本 executor 的实际测试输入域；历史完整随机矩阵的精度/性能记录不能直接视作本次三角输入结果，后续对照须双方使用同一新版 executor 重新运行。
+
+```bash
+export GPU_HOST=<gpu-server-ip>  GPU_HOST_PORT=9090
+cd tests/atk/chunk_kda_fwd_finalize
+atk node --name npu_dut --backend npu --devices 0 --output_path ./atk_output/gpu_dual \
+  node --name gpu_reference --backend gpu --host "$GPU_HOST" --port "$GPU_HOST_PORT" \
+       --devices 0 --is_compare true --output_path ./atk_output/gpu_dual \
+  task -c ./atk_chunk_kda_fwd_finalize.json --task accuracy --bm_device gpu \
+       -p ./executor_chunk_kda_fwd_finalize.py --syc_dataset -mt 1 -to 14400
+```
+
+GPU server 需要 CUDA Torch、Triton、ATK 和完整测试资产（包括 `scripts/gpu.py`）；`upstream_strict` 还需在同一 Python 环境安装原版 FLA，核对 `export_custom_data` 中源文件 SHA。GPU 侧不依赖 CANN 或 NPU wheel。golden 仍走独立 FP64 真值，精度标准不变；GPU/NPU 不预设逐位一致。
+
+control 的 head-major→token-major、h 连续化、metadata 和零 g 在 `init_by_input_data` 中准备一次。每次调用包含输出 zeros、目标 matmul kernel 和所需输出布局转换，**不是单 kernel 计时**。BSND/TND 通常可直接返回 token-major，BNSD/NTD 需要输出布局搬运。重复调用假设 ATK 本例输入固定；变更输入应重新初始化，不能复用旧 control。
+
+原版参考来自 `/data/huangjunzhe/GDN/github/alvazu/flash-linear-attention`，审计 HEAD `590d9305a92d1518a030a4d26491d4814b6f4de1`：KDA `chunk_fwd.py:122` → GLA `chunk.py:990` → `chunk_gla_fwd_kernel_o:363`。真实 GPU 准备好后可先运行新增因果自测：
+
+```bash
+python scripts/gpu.py --reference upstream_strict --causal-aqk
+```
+
+该自测只打印误差，正式精度仍以 ATK 双标杆及原混合容差为准。`TRITON_INTERPRET=1 python scripts/gpu.py` 仅用 FP32 验证 contract 的寻址/mask/varlen/布局，不能作为 CUDA BF16 验收。
+
+### GPU / NPU 性能比较口径
+
+双标杆用于精度：FP64 golden、同精度 GPU control、NPU DUT 三路；FP64 的耗时不作性能标杆。GPU 与 NPU 之间应固定相同输入字节、shape、layout、state、有效 chunk、元数据和输出边界，再分别测量：
+
+| 口径 | GPU | NPU | 限制 |
+| --- | --- | --- | --- |
+| 同契约 finalize kernel | contract 的目标 kernel；或因果 Aqk 上的真实 `chunk_gla_fwd_kernel_o` | 正常包 `ChunkKdaFwdFinalize` 目标 kernel | GPU 原版保留 g 读取与 exp2 路径；scale1 的乘法是否消除以生成代码为准，不宣称两者指令范围完全相同 |
+| 准备后 control 调用 | zeros＋目标 kernel＋输出布局转换 | 同起止边界的 NPU 调用 | 输入预布局/metadata 准备均单列；不能拿 GPU 完整调用对 NPU 单 kernel |
+| 完整接口或业务链路 | 从相同原始输入开始，包含全部准备、分配、layout 与输出 | 同一输入/输出边界的 NPU 链路 | 原生 GPU q/g/scale 路径的门控工作在 NPU 位于 Prepare；应统计对应上游步骤，完整 KDA 则比较完整 KDA |
+
+性能使用 ATK 发起对应设备任务，GPU profiler 的目标 kernel duration 与 NPU msopprof 的目标 duration 对比；完整调用用双方一致的设备计时方式另报。GPU `performance_device` 的 `device_perf` 是采集范围内所有 CUDA 活动时间之和除以调用次数，并非指定 Triton kernel；必须保留 profile，从 trace 中筛选目标 kernel 的每次 duration。contract 目标名含 `_chunk_kda_fwd_finalize_kernel`，原版含 `chunk_gla_fwd_kernel_o`。正式10次调用必须对应10个目标 kernel 事件且 duration 均大于0；工具未找到统计项时可能留下0，不能将0当有效性能。GPU 路由使用全部采样的均值，不应把 `performance_data` 的第三项解释成 GPU 尾 n 次统计。
+
+下面对原有性能 JSON 使用 `contract`（Aqk 在 executor 初始化时统一清零上三角）；GPU 服务进程须预先设置该模式。该命令不会产生“原版 GPU”性能：
+
+```bash
+atk node --name gpu_reference --backend gpu --host "$GPU_HOST" --port "$GPU_HOST_PORT" \
+    --devices 0 --output_path ./atk_output/gpu_contract_perf \
+  task -c ./atk_chunk_kda_fwd_finalize_perf.json \
+    -p ./executor_chunk_kda_fwd_finalize.py --task performance_device \
+    --performance_data 3,10,10 --save_data profile --disable_id_seed -to 2000
+```
+
+先通过真实 CUDA 双标杆，再完成编译/autotune 预热，正式样本排除冷启动；至少保留与既有 NPU 记录相同的10次样本，逐例报告中位数及 min/max。记录 GPU 型号、A2/A3 型号、Torch/Triton/CUDA/CANN、源码 SHA、调优配置和 cache 策略。比值统一 `GPU_us / NPU_us`。上游默认 `FLA_CACHE_MODE=disabled` 不代表禁用 Triton autotune。
+
+2026-10-16 CPU 适配回归10项通过，覆盖四布局×两state×dense/explicit/cu-scan的24组合、真实上游 Python wrapper body 的AST参数映射、因果域检查、尾padding、异常透传、ATK仅初始化准备一次及原CPU/NPU函数AST保持。CPU模拟launcher没有执行实际Triton kernel，也没有导入上游fla。最终文件对应证据在 `/data/huangjunzhe/GDN/work/kda_finalize_gpu_baseline_20261016/cpu_adapter_validation_v3.json`；首轮测试夹具错误及修订记录保留。
+
+检查时远程 192.168.9.234 为 A2 环境，无 CUDA GPU；尚未获得 GPU ATK host/port，故本轮没有真实 GPU BF16 精度或性能数据，也没有 GPU/NPU 加速比。此前 racecheck 的两例 FAIL 仍须单独修复验证，性能结果不能替代质量门禁。
+
 ## 性能与确定性
 
 大 shape 只跑 NPU 单算。先核对目标 case name，再在单条 ATK
@@ -449,3 +520,28 @@ MTE2_time+MAC_time>total_time，支持至少部分被计数的搬运/计算活�
 最终两次独立MemoryDetail尝试均由本任务主动取消（exit143）；取消原因/实际seed保留，
 没有有效baseline/candidate MemoryDetail CSV配对。只结束本任务进程，其他任务未动。
 性能环境已恢复候选正常包，完整6对象一致性再次通过，device5/6本任务进程已退出。
+
+
+## 2026-10-15：A2/A3 可达 tiling key 确定性及 Sanitizer 验证
+
+本轮只补充质量验证与证据；没有修改生产算子源码或 A5 逻辑。A2/A3 的 host 合法可达 tiling key 均只有 **0**：`USE_AIV_INPUT_MOVER=1` 的 key1 被 host 限定于 ASCEND950；旧 case 名中的 key2 是历史标签。key0 是 AIC_ONLY。
+
+|检查|实际覆盖与结果|
+|---|---|
+|正常包 ATK DC50＋原始 BF16 位检查|22/22 PASS；正式调用 1100 次，直接 int16 位比较 1078 次，差异元素 0；全部有限，22 例首末输入一致；另有 22 次前置 accuracy，不计入正式 50 轮|
+|`mssanitizer --tool=memcheck`|22/22 完成目标 key0 检测；WARN（寄存器复位告警，未达到严格 clean）；目标 FFTS_BASE_ADDR 告警 440 条，严格 clean 0/22|
+|`mssanitizer --tool=racecheck`|22/22 完成目标 key0 检测；FAIL（目标 L0C RAW/WAW hazard）；严格 clean 20/22|
+
+racecheck 的 HV1/T2561 两例（case20：BNSD/state=false；case21：BSND/state=true）各报告一条 L0C RAW 和一条 WAW，均指向 `ConsumeHead` 内 P 初始化 MMAD 与 R 原位累加，目标结束为 `See all detected errors above.`。两例 50 轮位比较均通过，说明输出稳定不能替代竞争检测。本轮测试没有修改生产源码；错误的最终根因及修复效果尚未验证。
+
+独立复核字段：`coverage_complete=true`、`overall_pass=false`、`no_memory_access_errors=true`、`no_race_hazards=false`。寄存器 WARNING 原文、目标 finish 状态和 strict false 均完整保留，没有以 ATK 的 memory_pass 或 exit0 替代工具判定。辅助 kernel 的寄存器告警另列。
+
+racecheck 的目标结论限于本算子。Cast/IsFinite/ReduceAll 等 ATK 辅助核未插桩，其 NoActive/unsupported 段完整保留，不宣称辅助核也完成了竞争检测。冻结分类器把正常 `No error detected` 结束行误识别为错误的原结果亦保留；最终目标判定由独立 CPU 复核原始 Start、注入与 Finish 日志得出。
+
+同一组 22 条冻结数学用例覆盖四布局 BNSD/BSND/NTD/TND、state_v_first 两值、dense/explicit/cu-scan、M1/17/32/33/63/64、单 head、跨 batch、双 L1 槽多次覆盖复用及退出 drain。四布局×两 state 在 explicit、cu-scan 两组均完整覆盖；本组不宣称穷举所有分支的笛卡尔积。normal/mem/race 的输入、seed、原数学 executor、FP64 golden 和精度标准相同。
+
+硬件实测为 Ascend910B3（A2）device5，msSanitizer 26.1.0。A3 只完成源码、正常包构建产物及 CPU host 选择/排程审计，**没有 A3 硬件检测结果**。racecheck 使用默认范围：核间检查全部 block，核内流水检查 block0。生产 host 额外 24 核 CPU 排程验证不代表 A3 实测。
+
+远程证据根：`/data/huangjunzhe/GDN/work/kda_finalize_sanitizer_keys_20261015`。正式 DC 证据为 `attempt_03/determinism`；44 条有效 sanitizer 原始记录的逐例来源、工具日志和 XLSX SHA 位于 `sanitizer_case_origins.json`（保留原 attempt 路径，不复制冒充完整运行）。共享设备占用导致的部分尝试和前期 runner 失败均单独保存，不计作通过。
+
+完整结果与复核：`a2a3_tiling_key_quality_report_20261015.md`、`independent_cross_attempt_validation_v2.json`、`deliverables/a2a3_tiling_key_quality_cases_20261015.csv`。证据归档为 `deliverables/a2a3_tiling_key_quality_evidence_20261015.zip`；其中保留正常包原生 DC XLSX、逐轮位比较记录、两工具各 22 份原始日志/XLSX、冻结资产/runner、18 源文件及实际 normal/san 对象的前后 SHA 核验。
