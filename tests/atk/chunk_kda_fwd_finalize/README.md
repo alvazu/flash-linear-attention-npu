@@ -105,12 +105,12 @@ executor 除 NPU DUT 与 CPU 双标杆外，还支持把参考节点放到远端
 | --- | --- | --- |
 | DUT | `device ∈ {npu, pyaclnn}` | 本 executor 的窄 aclnn 直调适配器（不变） |
 | 高精度 golden | `device = gpu` 且 `is_benchmark_task=True` | `scripts/gpu.py` 的 FP64 torch 真值（镜像 `run_cpu` 数学，设备跟随输入；输出转 FP32 载荷进 `gpu_benchmark` 目录，供 `mixed_tolerance_bm` 的 BF16 DUT / FP32 golden 对比较） |
-| 同精度标杆 | `device = gpu` 且 `is_benchmark_task=False` | `scripts/gpu.py` 的 `contract` 或 `upstream_strict`，均为 BF16 输入 / FP32 累加 / BF16 输出；任何执行失败直接报错，不自动切换实现 |
+| 同精度标杆 | `device = gpu` 且 `is_benchmark_task=False` | `scripts/gpu.py` 的真实上游 `chunk_gla_fwd_o_gk`（默认）；BF16 输入 / FP32 累加 / BF16 输出；任何执行失败直接报错，不自动切换实现 |
 
-GPU ATK **服务进程启动前**设置 `KDA_FINALIZE_GPU_REFERENCE`（仅在 NPU 客户端设置不保证传给远端服务）：
+GPU control 默认 `upstream_strict`。GPU **性能任务强制使用真实上游 `chunk_gla_fwd_o_gk`**，覆盖服务进程中残留的 `contract` 配置；不会用 FP64 golden 或改写 kernel 替代性能标杆。混合 accuracy/performance 的独立 golden pass 仍按 ATK 调度执行 FP64 精度参考。纯精度/调试任务可在 GPU ATK 服务进程启动前设置 `KDA_FINALIZE_GPU_REFERENCE`（仅在 NPU 客户端设置不保证传给远端服务）：
 
-- `contract`（默认）：改写 Triton kernel，消费完整 Aqk，固定 BK64/BV128/4warps/3stages。保留完整矩阵接口；本 executor 初始化时会统一清零 Aqk 上三角，结果标记 `gpu_contract_adapted_triton`；不能称为原版 GPU 算子性能。
-- `upstream_strict`：直接导入 GPU 环境中 `fla.ops.gla.chunk.chunk_gla_fwd_o_gk`，解开 dispatch 装饰器调用其原始 Triton 实现，保留原版 autotune。传 `q=qg_scaled`、FP32 `g=0`、`scale=1`、`A=aqk`、`v=v_new` 和原 h；结果标记 `gpu_upstream_chunk_gla_fwd_o_gk`，记录真实源码路径和 SHA256。
+- `contract`（仅显式精度/调试模式）：改写 Triton kernel，消费完整 Aqk，固定 BK64/BV128/4warps/3stages。保留完整矩阵接口；本 executor 初始化时会统一清零 Aqk 上三角，结果标记 `gpu_contract_adapted_triton`；不能称为原版 GPU 算子性能。
+- `upstream_strict`（默认，性能任务固定）：直接导入 GPU 环境中 `fla.ops.gla.chunk.chunk_gla_fwd_o_gk`，解开 dispatch 装饰器调用其原始 Triton 实现，保留原版 autotune。传 `q=qg_scaled`、FP32 `g=0`、`scale=1`、`A=aqk`、`v=v_new` 和原 h；结果标记 `gpu_upstream_chunk_gla_fwd_o_gk`，记录真实源码路径和 SHA256。
 
 上游 kernel 使用下三角。现在 `FunctionApi.init_by_input_data` 在所有 CPU/GPU/NPU 角色上统一原位处理 Aqk：按实际 `cu_seqlens` 的每段序列、每个 64 行 chunk 重置局部行号，清零 `j>r`，包括尾块无效列；保留对角线、下三角及其余输入原值。处理在 GPU control 准备前完成，设备上只在初始化同步一次，`__call__` 不执行 mask。继续使用原有 JSON 和生成器即可，不增加用例。GPU `upstream_strict` 的只读检查保留，用于防止无效输入进入上游。
 
@@ -144,21 +144,52 @@ python scripts/gpu.py --reference upstream_strict --causal-aqk
 
 | 口径 | GPU | NPU | 限制 |
 | --- | --- | --- | --- |
-| 同契约 finalize kernel | contract 的目标 kernel；或因果 Aqk 上的真实 `chunk_gla_fwd_kernel_o` | 正常包 `ChunkKdaFwdFinalize` 目标 kernel | GPU 原版保留 g 读取与 exp2 路径；scale1 的乘法是否消除以生成代码为准，不宣称两者指令范围完全相同 |
+| finalize 目标 kernel | 真实 `chunk_gla_fwd_o_gk` 启动的 `chunk_gla_fwd_kernel_o` | 正常包 `ChunkKdaFwdFinalize` 目标 kernel | GPU 原版保留 g 读取与 exp2 路径；scale1 的乘法是否消除以生成代码为准，不宣称两者指令范围完全相同 |
 | 准备后 control 调用 | zeros＋目标 kernel＋输出布局转换 | 同起止边界的 NPU 调用 | 输入预布局/metadata 准备均单列；不能拿 GPU 完整调用对 NPU 单 kernel |
 | 完整接口或业务链路 | 从相同原始输入开始，包含全部准备、分配、layout 与输出 | 同一输入/输出边界的 NPU 链路 | 原生 GPU q/g/scale 路径的门控工作在 NPU 位于 Prepare；应统计对应上游步骤，完整 KDA 则比较完整 KDA |
 
-性能使用 ATK 发起对应设备任务，GPU profiler 的目标 kernel duration 与 NPU msopprof 的目标 duration 对比；完整调用用双方一致的设备计时方式另报。GPU `performance_device` 的 `device_perf` 是采集范围内所有 CUDA 活动时间之和除以调用次数，并非指定 Triton kernel；必须保留 profile，从 trace 中筛选目标 kernel 的每次 duration。contract 目标名含 `_chunk_kda_fwd_finalize_kernel`，原版含 `chunk_gla_fwd_kernel_o`。正式10次调用必须对应10个目标 kernel 事件且 duration 均大于0；工具未找到统计项时可能留下0，不能将0当有效性能。GPU 路由使用全部采样的均值，不应把 `performance_data` 的第三项解释成 GPU 尾 n 次统计。
+性能使用 ATK 发起对应设备任务，GPU profiler 的目标 kernel duration 与 NPU msopprof 的目标 duration 对比；完整调用用双方一致的设备计时方式另报。GPU `performance_device` 的 `device_perf` 是采集范围内所有 CUDA 活动时间之和除以调用次数，并非指定 Triton kernel；必须保留 profile，从 trace 中筛选目标 kernel 的每次 duration。原版目标名含 `chunk_gla_fwd_kernel_o`；若性能 trace 出现 `_chunk_kda_fwd_finalize_kernel`，判为错误标杆并拒绝该结果。正式10次调用必须对应10个目标 kernel 事件且 duration 均大于0；工具未找到统计项时可能留下0，不能将0当有效性能。GPU 路由使用全部采样的均值，不应把 `performance_data` 的第三项解释成 GPU 尾 n 次统计。
 
-下面对原有性能 JSON 使用 `contract`（Aqk 在 executor 初始化时统一清零上三角）；GPU 服务进程须预先设置该模式。该命令不会产生“原版 GPU”性能：
+下面直接对原有性能 JSON 使用真实 `chunk_gla_fwd_o_gk`（Aqk 在 executor 初始化时统一清零上三角）。GPU 环境须安装原版 FLA；初始化会记录实际 `fla/ops/gla/chunk.py` 路径和 SHA256，导入失败直接报错：
 
 ```bash
 atk node --name gpu_reference --backend gpu --host "$GPU_HOST" --port "$GPU_HOST_PORT" \
-    --devices 0 --output_path ./atk_output/gpu_contract_perf \
+    --devices 0 --output_path ./atk_output/gpu_upstream_perf \
   task -c ./atk_chunk_kda_fwd_finalize_perf.json \
     -p ./executor_chunk_kda_fwd_finalize.py --task performance_device \
     --performance_data 3,10,10 --save_data profile --disable_id_seed -to 2000
 ```
+
+ATK 的汇总 `device_perf` 包含 wrapper 自身的输出清零和可能的布局搬运。核心两项矩阵乘由真实上游单 kernel 完成，独立 FP64 torch 仅供精度 golden。每个 case 从其本次 GPU trace 单独提取目标核：
+
+```bash
+python scripts/check_kernel_profile.py --device gpu \
+  --input <case_profile.pt.trace.json> --expected-count 10 --output gpu_kernel.json
+python scripts/check_kernel_profile.py --device npu \
+  --input <case_op_summary.csv> --expected-count 10 --output npu_kernel.json
+```
+
+校验器只接受明确的目标核和微秒 duration，排除 zero/layout 等辅助活动；缺目标、样本数不符、非正/NaN/Inf 耗时或 GPU contract kernel 均返回非零、`passed=false`，不输出 0 μs 成绩。它不会修改 ATK 原汇总表，正式对比使用校验通过 JSON 的 `median` 与完整 `all_samples`，两端采样数/输入/统计范围须一致。
+
+若 NPU 日志出现 `CANNTimelineParser/RelationParser/... run failed`、`op_summary is null` 和 `NPU AVG Profiler Time:0 us`，该 case 为采数失败，不能计算 GPU/NPU 比值。这是 NPU profiler 的采集/解析链，不能仅凭日志归因于 GPU 算子或精度。`AICORE_SHAPE`、Pydantic 序列化 warning 与 `Stop profiler ... RECORD` 本身不足以定位根因；已有成功采样同样包含 `Stop RECORD` 警告。保留本次 `*_ascend_pt` 原始目录，先查看其中 `logs/` 的首个异常和 CANN 导出结果，再核对实际 ATK/Torch/torch_npu/CANN 版本、模块路径、磁盘空间与目录权限。
+
+可在失败任务的同一 NPU Python 环境重新离线解析已有目录以取得详细异常（这不重新执行算子）：
+
+```bash
+python -c 'import sys; from torch_npu.profiler.profiler import analyse; analyse(sys.argv[1])' \
+  <failed_case_ascend_pt_directory>
+```
+
+离线解析仍需用校验器确认实际目标样本；Python 退出 0 不能代替文件检查。若需要先绕开 ATK 的 torch_npu profiler 排查 CANN 直接采数，可在 NPU 本机只做一条目标核 smoke：
+
+```bash
+msopprof \
+  --application="atk node --backend npu --devices <ID> task -c ./atk_chunk_kda_fwd_finalize_perf.json --task run -p ./executor_chunk_kda_fwd_finalize.py --disable_id_seed -s 1 -e 2 -sp -to 2000" \
+  --output=<new_empty_output_directory> --kernel-name='ChunkKdaFwdFinalize*' \
+  --launch-count=1 --warm-up=0 --aic-metrics=BasicInfo --kill=off
+```
+
+此命令是独立诊断，不是正式 10 样本对比；`msopprof` 结果不冒充 ATK `performance_device` 结果。远端调度命令不要加 `-sp`。解析失败的原始环境尚未接入时，只能确定本例无有效性能，不能宣称已修复其 CANN/torch_npu 环境问题。
 
 先通过真实 CUDA 双标杆，再完成编译/autotune 预热，正式样本排除冷启动；至少保留与既有 NPU 记录相同的10次样本，逐例报告中位数及 min/max。记录 GPU 型号、A2/A3 型号、Torch/Triton/CUDA/CANN、源码 SHA、调优配置和 cache 策略。比值统一 `GPU_us / NPU_us`。上游默认 `FLA_CACHE_MODE=disabled` 不代表禁用 Triton autotune。
 

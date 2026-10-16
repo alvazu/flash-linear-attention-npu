@@ -17,6 +17,7 @@ from typing import Any, Optional
 
 import torch
 
+from atk.configs.base_config import TaskTypesSelect
 from atk.configs.dataset_config import InputDataset
 from atk.configs.results_config import TaskResult
 from atk.tasks.api_execute import register
@@ -255,13 +256,27 @@ class FunctionApi(BaseApi):
         )
         # GPU 双标杆：远端 GPU 参考节点被调用两次 —— golden 任务（is_benchmark_task=True）
         # 跑 FP64 真值，普通任务跑显式选择的 GPU control。
-        self.gpu_high_precision = self.device == "gpu" and bool(task_result.is_benchmark_task)
+        tasks = set(task_result.task_type or ())
+        accuracy_golden = bool(task_result.is_benchmark_task) and bool(
+            tasks & set(TaskTypesSelect.ACCURACY_TASKS)
+        )
+        self.gpu_performance = self.device == "gpu" and not accuracy_golden and bool(
+            tasks & set(TaskTypesSelect.PERFORMANCE_TASKS)
+        )
+        self.gpu_high_precision = (
+            self.device == "gpu" and bool(task_result.is_benchmark_task)
+            and not self.gpu_performance
+        )
 
     def init_by_input_data(self, input_data: InputDataset):
         self.inputs = _prepare(input_data.kwargs)
         _clear_aqk_upper_(self.inputs)
         if self.device == "gpu" and not self.gpu_high_precision:
-            self.gpu_control = _load_gpu_reference().prepare_gpu_reference(self.inputs)
+            # Performance always measures the real upstream operator.  Mixed
+            # accuracy/performance tasks retain their separate FP64 golden pass.
+            self.gpu_control = _load_gpu_reference().prepare_gpu_reference(
+                self.inputs, reference="upstream_strict" if self.gpu_performance else None
+            )
 
     def __call__(self, input_data: InputDataset, with_output: bool = False):
         if self.inputs is None:

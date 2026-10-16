@@ -1,7 +1,7 @@
 """ChunkKdaFwdFinalize 的 GPU 双标杆。
 
 golden 为独立 FP64 两项矩阵乘。control 由
-``KDA_FINALIZE_GPU_REFERENCE=contract|upstream_strict`` 选择，默认 contract：
+``KDA_FINALIZE_GPU_REFERENCE=contract|upstream_strict`` 选择，默认 upstream_strict：
 
 - contract：无 fla 依赖的改写 Triton kernel，消费完整 Aqk，固定配置；
 - upstream_strict：调用已安装 fla 的真实 ``chunk_gla_fwd_o_gk`` 原函数，
@@ -312,7 +312,7 @@ class GpuReference:
     """ATK 固定输入的 GPU control；准备操作和有效域检查在计时前完成。"""
 
     def __init__(self, inputs: Any, reference: Optional[str] = None):
-        self.reference = reference or os.environ.get("KDA_FINALIZE_GPU_REFERENCE", "contract")
+        self.reference = reference or os.environ.get("KDA_FINALIZE_GPU_REFERENCE", "upstream_strict")
         if self.reference not in ("contract", "upstream_strict"):
             raise ValueError("KDA_FINALIZE_GPU_REFERENCE 必须为 contract 或 upstream_strict")
         _require_cuda_inputs(inputs)
