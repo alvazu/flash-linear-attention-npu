@@ -253,6 +253,13 @@ private:
         auto tileL0C = GetTile(tensorL0C, tla::MakeCoord(0, 0), tla::MakeShape(m, n));
         // A2/A3 的 MMAD 至少处理一个 16 行分形，尾块仍只写回有效行。
         const uint32_t madM = kFinalizeA5 ? m : (m < 16 ? 16 : m);
+#if !(defined(__CCE_AICORE__) && __CCE_AICORE__ == 310)
+        if constexpr (!InitC) {
+            // The second product reads and overwrites the first product in L0C.
+            // Keep its MTE1 copies overlapped with P, then order the dependent MMAD.
+            PipeBarrier<PIPE_M>();
+        }
+#endif
         Mmad{}(tileL0C, tileL0A, tileL0B, madM, n, k, InitC, 0);
 #if defined(__CCE_AICORE__) && __CCE_AICORE__ == 310
         Mutex::Unlock<PIPE_M>(static_cast<uint8_t>(4 + operandPlane));
