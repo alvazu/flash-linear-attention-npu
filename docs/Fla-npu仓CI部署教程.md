@@ -268,17 +268,20 @@ A5 Dockerfile 对 PyTorch 和 `torch_npu` wheel 做 SHA256 校验。默认 Pytho
 
 A2/A5 job 统一设置 `CI_TMPDIR=/tmp/fla-npu-ci`。A5 Triton/BiShengIR 编译器要求临时目录位于容器 `/tmp` 下；不要修改这个容器路径。`CI_HOST_TMPDIR` 把 `/home/huangjunzhe/ci/tmp/container-<platform>-<run>-<attempt>` bind mount 到该路径，宿主机 `TMPDIR` 使用同一根目录下的 `host-<platform>-<run>-<attempt>`。源码归档、Example/ST 配置中转和编译临时文件均使用这些独立目录；job 结束后先通过容器恢复工作区及临时文件的 runner 所有权，再清理本次运行的临时目录。容器中的 `/workspace/repo` 和 `/workspace/gdr_accuracy_golden` 是挂载目标，不要求宿主机存在 `/workspace`。
 
-缓存固定使用 `CI_CACHE_ROOT=/home/huangjunzhe/ci/cache_root`；NPU 锁固定使用 `/home/huangjunzhe/ci/tmp/npu-locks`，跨运行共享，不能按 run 分开或在单次 job 清理时删除。代理由 runner 服务环境预先配置，workflow 不再尝试读取 `/root` 的代理配置或修改全局 Git 配置。
+缓存固定使用 `CI_CACHE_ROOT=/home/huangjunzhe/ci/cache_root`；NPU 锁固定使用 `/home/huangjunzhe/ci/tmp/npu-locks`，跨运行共享，不能按 run 分开或在单次 job 清理时删除。
+
+A2/A5 均保留“启动代理并获取端口”步骤：workflow 在源码准备前读取共享配置 `CI_PROXY_SCRIPT=/home/huangjunzhe/ci/vpn-proxy.sh`，调用 `proxyon`，并通过 `GITHUB_ENV` 将代理地址与端口传递给后续步骤。管理员须提前在两台主机部署 `nelvko/clashctl` 到 `/home/huangjunzhe/ci/clashctl`，并将提供的 `vpn-proxy.sh` 适配副本放到上述位置：运行时配置和二进制路径指向该目录，日志写入 `/home/huangjunzhe/ci/tmp/mihomo.log`，权限允许 `ubuntu` 读取配置、执行二进制和写日志。脚本属于主机部署配置，不提交到仓库；workflow 不读取 `/root`、不修改 `HOME` 或全局 Git 配置。
 
 A2/A5 workflow 固定设置 `CI_JOBS=16` 和 `CI_CPACK_JOBS=16`，全量与局部 OPP 构建均使用 `-j16`。`ci/run_checks.sh` 的默认并行度也为 16，并将该值导出为 PyTorch/Ninja 使用的 `MAX_JOBS`；CPack、CMake 和 Make 使用同一并行度设置。`FLA_NPU_BUILD_ARGS` 追加 `-j16`，覆盖 wheel 打包内部再次调用 `build.sh` 时的并行度。
 
-runner 可以使用普通 `ubuntu` 用户，workflow 全程不调用 `sudo`。管理员须提前授予该用户 Docker daemon 访问权限，以及上述两个宿主机目录的读写、遍历权限；例如首次部署时执行以下命令，之后重启 runner 服务使新组生效：
+runner 使用普通 `ubuntu` 用户，workflow 全程不调用 `sudo`。管理员须提前授予该用户 Docker daemon 访问权限、所列宿主机目录的读写权限及其父目录的遍历权限；例如首次部署时执行以下命令，之后重新登录 `ubuntu`，使新组生效，再启动 runner 用户服务：
 
 ```sh
 sudo groupadd -f fla-npu-ci
 sudo usermod -aG docker,HwHiAiUser,fla-npu-ci ubuntu
 sudo install -d -o ubuntu -g fla-npu-ci -m 2775 \
-  /home/huangjunzhe/ci/tmp /home/huangjunzhe/ci/cache_root
+  /home/huangjunzhe/ci/tmp /home/huangjunzhe/ci/cache_root \
+  /home/huangjunzhe/ci/actions-runner
 ```
 
 容器内部仍使用镜像默认用户执行全局 pip 和 OPP 安装；这与宿主机 runner 以普通用户运行是两个权限范围。手工调用 `ci/run_ci_container.sh` 时，也应显式设置 `CI_TMPDIR`、`CI_HOST_TMPDIR`、`CI_CACHE_ROOT` 和 `CI_NPU_LOCK_DIR`，脚本自身的默认值保持不变。
@@ -423,12 +426,14 @@ bash ci/run_ci_container.sh
 
 ## 第 7 步：注册 runner
 
-回到 NPU 服务器执行：
+在 A2、A5 NPU 服务器上分别以 `ubuntu` 用户执行：
 
 ```sh
 cd "$HOME/flash-linear-attention-npu-ci/context"
+source /home/huangjunzhe/ci/vpn-proxy.sh
+proxyon
 
-RUNNER_ROOT="$HOME/actions-runner/flash-linear-attention-npu" \
+RUNNER_ROOT=/home/huangjunzhe/ci/actions-runner \
 bash ci/setup_self_hosted_runner.sh \
   --url https://github.com/flashserve/flash-linear-attention-npu \
   --token <把刚才复制的 registration token 放这里>
@@ -438,8 +443,10 @@ bash ci/setup_self_hosted_runner.sh \
 
 ```sh
 cd "$HOME/flash-linear-attention-npu-ci/context"
+source /home/huangjunzhe/ci/vpn-proxy.sh
+proxyon
 
-RUNNER_ROOT="$HOME/actions-runner/flash-linear-attention-npu-a5" \
+RUNNER_ROOT=/home/huangjunzhe/ci/actions-runner \
 RUNNER_NAME="$(hostname)-flash-linear-attention-npu-a5" \
 RUNNER_LABELS=linux,x64,npu,ascend950,flash-linear-attention-npu-a5 \
 bash ci/setup_self_hosted_runner.sh \
@@ -447,10 +454,10 @@ bash ci/setup_self_hosted_runner.sh \
   --token <把刚才复制的 registration token 放这里>
 ```
 
-以上示例通过环境变量覆盖安装目录，A2 runner 安装到：
+以上示例通过环境变量覆盖安装目录，两台主机分别安装到各自的：
 
 ```text
-$HOME/actions-runner/flash-linear-attention-npu
+/home/huangjunzhe/ci/actions-runner
 ```
 
 默认 runner name 是：
@@ -471,7 +478,30 @@ A5 labels 必须是：
 linux,x64,npu,ascend950,flash-linear-attention-npu-a5
 ```
 
-脚本自身的默认安装路径仍为 `/workspace/actions-runner/flash-linear-attention-npu`，部署时应使用上面的 `RUNNER_ROOT` 覆盖。如果管理员用 root 运行安装脚本，会尝试安装并启动系统服务；普通用户可以前台运行 `./run.sh`。完成后回到 GitHub 页面：
+脚本自身的默认安装路径仍为 `/workspace/actions-runner/flash-linear-attention-npu`，部署时使用上面的 `RUNNER_ROOT` 覆盖。注册完成后，以 `ubuntu` 用户创建用户服务：
+
+```sh
+mkdir -p "$HOME/.config/systemd/user"
+cat > "$HOME/.config/systemd/user/fla-npu-runner.service" <<'EOF'
+[Unit]
+Description=Flash Linear Attention NPU GitHub Actions runner
+
+[Service]
+WorkingDirectory=/home/huangjunzhe/ci/actions-runner
+ExecStart=/bin/bash -c 'source /home/huangjunzhe/ci/vpn-proxy.sh; proxyon; exec /home/huangjunzhe/ci/actions-runner/bin/runsvc.sh'
+Restart=always
+RestartSec=5
+KillMode=process
+TimeoutStopSec=5min
+
+[Install]
+WantedBy=default.target
+EOF
+systemctl --user daemon-reload
+systemctl --user enable --now fla-npu-runner.service
+```
+
+管理员另外执行一次 `sudo loginctl enable-linger ubuntu`，使用户服务在退出登录后继续运行并随主机启动。如果用户服务管理器在授予 Docker 等组权限前就已启动，管理员需安排重新启动该用户管理器或主机，使服务继承新的组权限；仅重启 runner 进程不能刷新已有用户管理器的组列表。完成后回到 GitHub 页面：
 
 ```text
 Settings -> Actions -> Runners
@@ -484,34 +514,33 @@ Settings -> Actions -> Runners
 先在服务器上看 runner 目录：
 
 ```sh
-cd "$HOME/actions-runner/flash-linear-attention-npu"
+cd /home/huangjunzhe/ci/actions-runner
 ls
 ```
 
-如果已经安装成服务，由管理员检查和维护（这些命令不属于 CI 执行过程）：
+以 `ubuntu` 用户检查服务：
 
 ```sh
-sudo ./svc.sh status
+systemctl --user status fla-npu-runner.service
 ```
 
 尝试重启：
 
 ```sh
-sudo ./svc.sh stop
-sudo ./svc.sh start
-sudo ./svc.sh status
+systemctl --user restart fla-npu-runner.service
+systemctl --user status fla-npu-runner.service
 ```
 
 查看日志：
 
 ```sh
-journalctl -u 'actions.runner.*' -n 200 --no-pager
+journalctl --user -u fla-npu-runner.service -n 200 --no-pager
 ```
 
 如果没有安装服务，可以前台运行看日志：
 
 ```sh
-cd "$HOME/actions-runner/flash-linear-attention-npu"
+cd /home/huangjunzhe/ci/actions-runner
 ./run.sh
 ```
 
@@ -528,7 +557,7 @@ cd "$HOME/actions-runner/flash-linear-attention-npu"
 ```sh
 cd "$HOME/flash-linear-attention-npu-ci/context"
 
-RUNNER_ROOT="$HOME/actions-runner/flash-linear-attention-npu" \
+RUNNER_ROOT=/home/huangjunzhe/ci/actions-runner \
 RUNNER_LABELS=linux,arm64,npu,flash-linear-attention-npu \
 bash ci/setup_self_hosted_runner.sh \
   --url https://github.com/flashserve/flash-linear-attention-npu \

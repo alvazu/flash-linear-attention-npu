@@ -812,14 +812,66 @@ globalThis.core = {
         self.assertIn('mount_args+=(-v "$host_tmpdir:$container_tmpdir")', container_script)
         self.assertIn('CI_TMPDIR must be an absolute container path', container_script)
 
-    def test_runner_environment_does_not_depend_on_root_proxy_configuration(self):
+    def test_runner_proxy_is_shared_without_root_configuration(self):
+        job = yaml.safe_load(WORKFLOW_PATH.read_text(encoding="utf-8"))["jobs"]["ascend-npu"]
+        self.assertEqual(job["env"]["CI_PROXY_SCRIPT"], "/home/huangjunzhe/ci/vpn-proxy.sh")
+        names = [step.get("name", "") for step in self.matrix_steps]
+        proxy_index = names.index("启动代理并获取端口")
+        proxy_step = self.matrix_steps[proxy_index]
+        self.assertNotIn("if", proxy_step)
+        self.assertLess(names.index("检查 runner 权限并准备存储目录"), proxy_index)
+        self.assertLess(proxy_index, names.index("通过 GitHub API 准备 A5 源码"))
+        self.assertLess(proxy_index, names.index("拉取当前目标分支代码（第 1 次）"))
+        self.assertIn('source "$CI_PROXY_SCRIPT"', proxy_step["run"])
+        self.assertIn("proxyon", proxy_step["run"])
         scripts = "\n".join(step.get("run", "") for step in self.matrix_steps)
-        self.assertNotIn("/root/clashctl", scripts)
+        self.assertNotIn("/root/", scripts)
         self.assertNotIn("/etc/profile.d/vpn-proxy.sh", scripts)
-        self.assertNotIn("proxyon", scripts)
         self.assertNotIn("git config --global", scripts)
         self.assertNotRegex(scripts, r"(?m)^\s*(?:export\s+)?HOME=")
         self.assertNotRegex(scripts, r"(?m)^\s*(?:sudo|systemctl)\s")
+
+    @unittest.skipUnless(os.name == "posix" and shutil.which("bash"), "Linux shell test")
+    def test_proxy_values_reach_later_steps_and_reject_newlines(self):
+        step = next(step for step in self.matrix_steps if step.get("name") == "启动代理并获取端口")
+        values = dict.fromkeys(
+            ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY", "GIT_HTTP_PROXY", "GIT_HTTPS_PROXY"),
+            "http://user:password@127.0.0.1:7899",
+        )
+        values.update(
+            all_proxy="socks5h://127.0.0.1:7891", ALL_PROXY="socks5h://127.0.0.1:7891",
+            no_proxy="localhost,127.0.0.1,::1", NO_PROXY="localhost,127.0.0.1,::1",
+            PROXY_HTTP_PORT="7899", PROXY_SOCKS_PORT="7891", PROXY_MIXED_PORT="7898",
+        )
+        for bad_value in (None, "http://127.0.0.1:7899\nINJECTED=value", "http://127.0.0.1:7899\rINJECTED=value"):
+            with self.subTest(bad_value=bad_value), tempfile.TemporaryDirectory() as temp_dir:
+                root = Path(temp_dir)
+                proxy_script = root / "proxy script.sh"
+                proxy_values = dict(values)
+                if bad_value is not None:
+                    proxy_values["http_proxy"] = bad_value
+                proxy_script.write_text(
+                    "proxyon() {\n" + "".join(
+                        f"  export {name}={shlex.quote(value)}\n"
+                        for name, value in proxy_values.items()
+                    ) + "}\n",
+                    encoding="utf-8",
+                )
+                github_env = root / "github-env"
+                env = os.environ.copy()
+                env.update(CI_PROXY_SCRIPT=str(proxy_script), GITHUB_ENV=str(github_env))
+                completed = subprocess.run(
+                    ["bash", "-c", step["run"]], env=env,
+                    text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                )
+                output = github_env.read_text(encoding="utf-8") if github_env.exists() else ""
+                if bad_value is None:
+                    self.assertEqual(completed.returncode, 0, completed.stderr)
+                    self.assertEqual(dict(line.split("=", 1) for line in output.splitlines()), values)
+                else:
+                    self.assertNotEqual(completed.returncode, 0)
+                    self.assertIn("contains a newline", completed.stderr)
+                    self.assertNotIn("INJECTED", output)
 
     def _run_matrix_storage_step(self, name, root, overrides=None):
         step = next(step for step in self.matrix_steps if step["name"].startswith(name))

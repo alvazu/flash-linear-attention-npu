@@ -397,6 +397,7 @@ jobs:
       CI_OPS: ${{ needs.prepare.outputs.ops }}
       CI_JOBS: '16'
       CI_CPACK_JOBS: '16'
+      CI_PROXY_SCRIPT: /home/huangjunzhe/ci/vpn-proxy.sh
       CI_STAGE: ${{ needs.prepare.outputs.ops == '' && 'all' || 'opp-package' }}
       CI_SOC: ${{ matrix.soc }}
       FLA_NPU_SOC: ${{ matrix.soc }}
@@ -444,6 +445,21 @@ jobs:
             fi
             probe="$(mktemp "$directory/.write-check.XXXXXX")"
             rm -f -- "$probe"
+          done
+
+      - name: 启动代理并获取端口
+        run: |
+          set -euo pipefail
+          source "$CI_PROXY_SCRIPT"
+          proxyon
+          for variable in http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY \
+            no_proxy NO_PROXY GIT_HTTP_PROXY GIT_HTTPS_PROXY PROXY_HTTP_PORT PROXY_SOCKS_PORT PROXY_MIXED_PORT; do
+            value="${!variable-}"
+            if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+              echo "[CI][ERROR] Proxy variable $variable contains a newline." >&2
+              exit 1
+            fi
+            printf '%s=%s\n' "$variable" "$value" >> "$GITHUB_ENV"
           done
 
       - name: 通过 GitHub API 准备 A5 源码
