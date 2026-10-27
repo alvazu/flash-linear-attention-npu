@@ -804,7 +804,7 @@ globalThis.core = {
         self.assertEqual(
             env["CI_HOST_TMPDIR"], f"/home/huangjunzhe/ci/tmp/container-{identity}"
         )
-        self.assertEqual(env["TMPDIR"], f"/home/huangjunzhe/ci/tmp/host-{identity}")
+        self.assertEqual(env["TMPDIR"], "/home/huangjunzhe/ci/tmp")
         self.assertEqual(env["CI_CONTAINER_NAME"], f"fla-npu-ci-{identity}")
         self.assertEqual(env["CI_CACHE_ROOT"], "/home/huangjunzhe/ci/cache_root")
         self.assertEqual(env["CI_NPU_LOCK_DIR"], "/home/huangjunzhe/ci/tmp/npu-locks")
@@ -812,16 +812,30 @@ globalThis.core = {
         self.assertIn('mount_args+=(-v "$host_tmpdir:$container_tmpdir")', container_script)
         self.assertIn('CI_TMPDIR must be an absolute container path', container_script)
 
-    def test_runner_proxy_is_shared_without_root_configuration(self):
+    def test_proxy_fallback_preserves_direct_first_checkout_and_original_retry_order(self):
         job = yaml.safe_load(WORKFLOW_PATH.read_text(encoding="utf-8"))["jobs"]["ascend-npu"]
         self.assertEqual(job["env"]["CI_PROXY_SCRIPT"], "/home/huangjunzhe/ci/vpn-proxy.sh")
         names = [step.get("name", "") for step in self.matrix_steps]
         proxy_index = names.index("启动代理并获取端口")
         proxy_step = self.matrix_steps[proxy_index]
-        self.assertNotIn("if", proxy_step)
-        self.assertLess(names.index("检查 runner 权限并准备存储目录"), proxy_index)
-        self.assertLess(proxy_index, names.index("通过 GitHub API 准备 A5 源码"))
-        self.assertLess(proxy_index, names.index("拉取当前目标分支代码（第 1 次）"))
+        self.assertEqual(proxy_step["if"], "steps.checkout_pr_1.outcome == 'failure' && matrix.platform == 'a2'")
+        original_order = ["通过 GitHub API 准备 A5 源码", "拉取当前目标分支代码（第 1 次）",
+                          "启动代理并获取端口", "等待后重试拉取目标分支代码",
+                          "拉取当前目标分支代码（第 2 次）", "再次等待后重试拉取目标分支代码",
+                          "拉取当前目标分支代码（第 3 次）"]
+        self.assertEqual(sorted(original_order, key=names.index), original_order)
+        self.assertNotIn("检查 runner 权限并准备存储目录", names)
+        self.assertNotIn("恢复 runner 工作目录权限", names)
+        for step_name in ("通过 GitHub API 准备 A5 源码", "拉取当前目标分支代码（第 1 次）"):
+            step = next(step for step in self.matrix_steps if step["name"] == step_name)
+            for variable in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY", "all_proxy", "ALL_PROXY", "GIT_HTTP_PROXY", "GIT_HTTPS_PROXY"):
+                self.assertEqual(step["env"][variable], "", (step_name, variable))
+            self.assertEqual(step["env"]["no_proxy"], "*")
+            self.assertEqual(step["env"]["NO_PROXY"], "*")
+            self.assertNotIn("proxyon", step.get("run", ""))
+        for checkout_id in ("checkout_pr_2",):
+            retry = next(step for step in self.matrix_steps if step.get("id") == checkout_id)
+            self.assertNotIn("env", retry)
         self.assertIn('source "$CI_PROXY_SCRIPT"', proxy_step["run"])
         self.assertIn("proxyon", proxy_step["run"])
         scripts = "\n".join(step.get("run", "") for step in self.matrix_steps)
@@ -941,53 +955,6 @@ rm() { record_command rm "$@"; }
         records = [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
         return completed, records, env
 
-    @unittest.skipUnless(os.name == "posix" and shutil.which("bash"), "Linux shell is required")
-    def test_runner_preflight_checks_docker_before_preparing_writable_storage(self):
-        for failure in ("", "info"):
-            with self.subTest(docker_failure=failure), tempfile.TemporaryDirectory() as temp:
-                root = Path(temp)
-                completed, records, env = self._run_matrix_storage_step(
-                    "检查 runner 权限", root, {"CI_TEST_DOCKER_FAILURE": failure}
-                )
-                self.assertEqual(records[0], ["docker", "info"])
-                if failure:
-                    self.assertNotEqual(completed.returncode, 0)
-                    self.assertIn("runner user must have Docker access", completed.stderr)
-                    self.assertFalse(Path(env["CI_CACHE_ROOT"]).exists())
-                else:
-                    self.assertEqual(completed.returncode, 0, completed.stderr)
-                    for key in ("TMPDIR", "CI_HOST_TMPDIR", "CI_CACHE_ROOT", "CI_NPU_LOCK_DIR"):
-                        directory = Path(env[key])
-                        self.assertTrue(directory.is_dir(), key)
-                        self.assertTrue(any(
-                            item[0] == "rm" and Path(item[-1]).parent == directory
-                            for item in records
-                        ), key)
-
-    @unittest.skipUnless(os.name == "posix" and shutil.which("bash"), "Linux shell is required")
-    def test_runner_preflight_repairs_previous_checkout_before_storage_preparation(self):
-        for failure in ("", "run"):
-            with self.subTest(docker_failure=failure), tempfile.TemporaryDirectory() as temp:
-                root = Path(temp)
-                (root / "repo").mkdir()
-                completed, records, env = self._run_matrix_storage_step(
-                    "检查 runner 权限", root, {"CI_TEST_DOCKER_FAILURE": failure}
-                )
-                self.assertEqual(records[0], ["docker", "info"])
-                self.assertEqual(records[1], ["docker", "image", "inspect", env["CI_IMAGE"]])
-                repair = records[2]
-                self.assertEqual(repair[:2], ["docker", "run"])
-                self.assertIn(f"{root}/repo:/ci-repo", repair)
-                self.assertIn('chown -Rh -- "$1:$2" /ci-repo', repair)
-                self.assertEqual(repair[-2:], [str(os.getuid()), str(os.getgid())])
-                if failure:
-                    self.assertEqual(completed.returncode, 39)
-                    self.assertFalse(Path(env["CI_CACHE_ROOT"]).exists())
-                else:
-                    self.assertEqual(completed.returncode, 0, completed.stderr)
-                    self.assertTrue(all(item[0] == "rm" for item in records[3:]))
-                    self.assertTrue(Path(env["CI_CACHE_ROOT"]).is_dir())
-
     @unittest.skipUnless(os.name == "posix" and shutil.which("bash") and shutil.which("make"), "Linux make test")
     def test_prepare_build_honors_ci_parallelism_and_preserves_default(self):
         wrapper = r"""
@@ -1103,36 +1070,6 @@ exec bash "$CI_TEST_PREPARE_SCRIPT" -s "$CI_TEST_SOURCE" -b "$CI_TEST_BUILD"
                     self.assertEqual(command[-3:], ["-O3", "-j64", "-j16"])
 
     @unittest.skipUnless(os.name == "posix" and shutil.which("bash"), "Linux shell is required")
-    def test_ownership_cleanup_stops_container_and_returns_mounts_to_runner(self):
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            (root / "repo").mkdir()
-            completed, records, env = self._run_matrix_storage_step("恢复 runner", root)
-            self.assertEqual(completed.returncode, 0, completed.stderr)
-            self.assertEqual(records[0], ["docker", "rm", "-f", env["CI_CONTAINER_NAME"]])
-            self.assertEqual(records[1], ["docker", "image", "inspect", env["CI_IMAGE"]])
-            run = records[2]
-            self.assertEqual(run[:2], ["docker", "run"])
-            self.assertEqual(run[run.index("--network") + 1], "none")
-            self.assertEqual(run[run.index("--entrypoint") + 1], "bash")
-            mounts = [run[index + 1] for index, value in enumerate(run) if value == "-v"]
-            self.assertEqual(mounts, [f"{root}/repo:/ci-repo", f"{env['CI_HOST_TMPDIR']}:/ci-tmp"])
-            self.assertIn('chown -Rh -- "$1:$2" /ci-repo /ci-tmp', run)
-            self.assertEqual(run[-2:], [str(os.getuid()), str(os.getgid())])
-            self.assertNotIn("--privileged", run)
-            self.assertNotIn("--device", run)
-
-    @unittest.skipUnless(os.name == "posix" and shutil.which("bash"), "Linux shell is required")
-    def test_ownership_cleanup_propagates_container_failure(self):
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            (root / "repo").mkdir()
-            completed, _, _ = self._run_matrix_storage_step(
-                "恢复 runner", root, {"CI_TEST_DOCKER_FAILURE": "run"}
-            )
-            self.assertEqual(completed.returncode, 39)
-
-    @unittest.skipUnless(os.name == "posix" and shutil.which("bash"), "Linux shell is required")
     def test_temp_cleanup_preserves_persistent_cache_and_npu_locks(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -1140,9 +1077,58 @@ exec bash "$CI_TEST_PREPARE_SCRIPT" -s "$CI_TEST_SOURCE" -b "$CI_TEST_BUILD"
             completed, records, env = self._run_matrix_storage_step("清理 ", root)
             self.assertEqual(completed.returncode, 0, completed.stderr)
             recursive_removals = [item[-1] for item in records if item[:2] == ["rm", "-rf"]]
-            self.assertEqual(recursive_removals, [env["CI_HOST_TMPDIR"], env["TMPDIR"]])
+            self.assertEqual(recursive_removals, [env["CI_HOST_TMPDIR"], env["TMPDIR"] + "/fla-npu-source-42-1"])
+            self.assertNotIn(env["TMPDIR"], recursive_removals)
             self.assertNotIn(env["CI_CACHE_ROOT"], recursive_removals)
             self.assertNotIn(env["CI_NPU_LOCK_DIR"], recursive_removals)
+
+    @unittest.skipUnless(os.name == "posix" and shutil.which("bash"), "Linux shell is required")
+    def test_a2_cleanup_does_not_remove_static_tmpdir_or_a5_source_archive(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "repo" / ".ci-tmp").mkdir(parents=True)
+            completed, records, env = self._run_matrix_storage_step(
+                "清理 ", root, {"CI_ACCURACY_PLATFORM": "a2", "CI_HOST_TMPDIR": "/home/huangjunzhe/ci/tmp/container-a2-42-1"}
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            removals = [item[-1] for item in records if item[:2] == ["rm", "-rf"]]
+            self.assertEqual(removals, [env["CI_HOST_TMPDIR"]])
+            self.assertNotIn(env["TMPDIR"], removals)
+
+    @unittest.skipUnless(os.name == "posix" and shutil.which("bash") and shutil.which("python3"), "Linux shell is required")
+    def test_a2_case_archive_is_removed_on_failure_without_cleaning_static_tmpdir(self):
+        step = next(step for step in self.matrix_steps if step["name"] == "使用可信 CI 脚本")
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "repo" / "ci").mkdir(parents=True)
+            (root / "repo" / "ci" / "example_st_cases.json").write_text("invalid JSON", encoding="utf-8")
+            scratch = root / "shared temporary root"
+            scratch.mkdir()
+            keep = scratch / "unrelated-run-data"
+            keep.write_text("keep", encoding="utf-8")
+            env = os.environ.copy()
+            env["TMPDIR"] = str(scratch)
+            completed = subprocess.run(
+                ["bash", "-e", "-o", "pipefail", "-c", step["run"]], cwd=root, env=env,
+                text=True, encoding="utf-8", capture_output=True, check=False,
+            )
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn("JSONDecodeError", completed.stderr)
+            self.assertEqual(list(scratch.iterdir()), [keep])
+            self.assertEqual(keep.read_text(encoding="utf-8"), "keep")
+
+    @unittest.skipUnless(os.name == "posix" and shutil.which("bash"), "Linux shell is required")
+    def test_a5_archive_cleanup_rejects_a_different_tmpdir_before_removing_any_directory(self):
+        for suffix in ("../cache_root", "npu-locks", "fla-npu-source-42-1"):
+            with self.subTest(path=suffix), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                (root / "repo" / ".ci-tmp").mkdir(parents=True)
+                completed, records, _ = self._run_matrix_storage_step(
+                    "清理 ", root, {"TMPDIR": "/home/huangjunzhe/ci/tmp/" + suffix}
+                )
+                self.assertNotEqual(completed.returncode, 0)
+                self.assertIn("Refusing to clean an unexpected source archive directory", completed.stderr)
+                self.assertFalse(any(item[:2] == ["rm", "-rf"] for item in records))
 
     @unittest.skipUnless(os.name == "posix" and shutil.which("bash"), "Linux shell is required")
     def test_temp_cleanup_rejects_paths_outside_current_platform_run(self):
@@ -1163,15 +1149,16 @@ exec bash "$CI_TEST_PREPARE_SCRIPT" -s "$CI_TEST_SOURCE" -b "$CI_TEST_BUILD"
 
     @unittest.skipUnless(os.name == "posix" and shutil.which("bash"), "Linux shell is required")
     def test_cleanup_rejects_symlinks_to_unrelated_data(self):
-        for target in ("host-temp", "log"):
+        for target in ("host-temp", "archive", "log"):
             with self.subTest(target=target), tempfile.TemporaryDirectory() as temp:
                 root = Path(temp)
                 log_dir = root / "repo" / ".ci-tmp"
                 log_dir.mkdir(parents=True)
                 unrelated = root / "unrelated"
                 unrelated.mkdir()
-                if target == "host-temp":
-                    link = root / "runner storage" / "tmp" / "container-a5-42-1"
+                if target in {"host-temp", "archive"}:
+                    name = "container-a5-42-1" if target == "host-temp" else "fla-npu-source-42-1"
+                    link = root / "runner storage" / "tmp" / name
                     link.parent.mkdir(parents=True)
                     link.symlink_to(unrelated, target_is_directory=True)
                 else:
@@ -1464,12 +1451,10 @@ exec bash "$CI_TEST_PREPARE_SCRIPT" -s "$CI_TEST_SOURCE" -b "$CI_TEST_BUILD"
 
     def test_cleanup_runs_before_status_capture_and_upload(self):
         names = [step.get("name", "") for step in self.matrix_steps]
-        ownership = next(index for index, name in enumerate(names) if name.startswith("恢复 runner"))
         cleanup = next(index for index, name in enumerate(names) if name.startswith("清理 "))
         record = next(index for index, name in enumerate(names) if name.startswith("记录 "))
         upload = next(index for index, name in enumerate(names) if name.startswith("上传 "))
-        self.assertLess(ownership, cleanup)
-        self.assertIn("always()", self.matrix_steps[ownership]["if"])
+        self.assertIn("always()", self.matrix_steps[cleanup]["if"])
         self.assertLess(cleanup, record)
         self.assertLess(record, upload)
 

@@ -266,15 +266,21 @@ A5 job 固定设置 `CI_REQUIRE_PRELOADED_IMAGE=true`。若 `fla-npu-ci:9.1.0-95
 
 A5 Dockerfile 对 PyTorch 和 `torch_npu` wheel 做 SHA256 校验。默认 Python 包源可通过 `PYPI_INDEX_URL` build arg 覆盖，但不能跳过 wheel 版本和校验和约束。
 
-A2/A5 job 统一设置 `CI_TMPDIR=/tmp/fla-npu-ci`。A5 Triton/BiShengIR 编译器要求临时目录位于容器 `/tmp` 下；不要修改这个容器路径。`CI_HOST_TMPDIR` 把 `/home/huangjunzhe/ci/tmp/container-<platform>-<run>-<attempt>` bind mount 到该路径，宿主机 `TMPDIR` 使用同一根目录下的 `host-<platform>-<run>-<attempt>`。源码归档、Example/ST 配置中转和编译临时文件均使用这些独立目录；job 结束后先通过容器恢复工作区及临时文件的 runner 所有权，再清理本次运行的临时目录。容器中的 `/workspace/repo` 和 `/workspace/gdr_accuracy_golden` 是挂载目标，不要求宿主机存在 `/workspace`。
+A2/A5 job 统一设置 `CI_TMPDIR=/tmp/fla-npu-ci`。A5 Triton/BiShengIR 编译器要求临时目录位于容器 `/tmp` 下；不要修改这个容器路径。`CI_HOST_TMPDIR` 把 `/home/huangjunzhe/ci/tmp/container-<platform>-<run>-<attempt>` bind mount 到该路径，由 `ci/run_ci_container.sh` 创建本次目录。宿主机 `TMPDIR` 固定为 `/home/huangjunzhe/ci/tmp`，基础目录由部署脚本提前创建，供源码准备阶段使用。容器中的 `/workspace/repo` 和 `/workspace/gdr_accuracy_golden` 是挂载目标，不要求宿主机存在 `/workspace`。
 
-缓存固定使用 `CI_CACHE_ROOT=/home/huangjunzhe/ci/cache_root`；NPU 锁固定使用 `/home/huangjunzhe/ci/tmp/npu-locks`，跨运行共享，不能按 run 分开或在单次 job 清理时删除。
+`ci/run_ci_container.sh` 在宿主机注册 `EXIT` 收尾：通过 Docker `--cidfile` 记录本次创建的容器 ID，仅停止该容器，再用无网络 helper 容器将源码及本次 `CI_HOST_TMPDIR` 的所有权归还调用用户，最后释放设备锁。正常退出、失败、中断及 stale-commit 监控提前 `docker rm -f` 的路径均执行收尾；原始非零退出码保留，成功运行后的收尾失败也会使 CI 失败。目录准备与权限收尾都在入口脚本中完成，无需新增 workflow 步骤或宿主机 `sudo`。
 
-A2/A5 均保留“启动代理并获取端口”步骤：workflow 在源码准备前读取共享配置 `CI_PROXY_SCRIPT=/home/huangjunzhe/ci/vpn-proxy.sh`，调用 `proxyon`，并通过 `GITHUB_ENV` 将代理地址与端口传递给后续步骤。管理员须提前在两台主机部署 `nelvko/clashctl` 到 `/home/huangjunzhe/ci/clashctl`，并将提供的 `vpn-proxy.sh` 适配副本放到上述位置：运行时配置和二进制路径指向该目录，日志写入 `/home/huangjunzhe/ci/tmp/mihomo.log`，权限允许 `ubuntu` 读取配置、执行二进制和写日志。脚本属于主机部署配置，不提交到仓库；workflow 不读取 `/root`、不修改 `HOME` 或全局 Git 配置。
+现有 workflow 清理步骤只删除本次 `CI_HOST_TMPDIR` 和 A5 的精确源码归档目录 `/home/huangjunzhe/ci/tmp/fla-npu-source-<run>-<attempt>`，并校验目录边界及符号链接。A2 的 Example/ST 配置中转使用 `TMPDIR` 下的独立 `mktemp` 目录，由该步骤自己的 `EXIT` trap 清理。静态 `TMPDIR` 根目录始终保留。
+
+缓存固定使用 `CI_CACHE_ROOT=/home/huangjunzhe/ci/cache_root`；NPU 锁固定使用 `/home/huangjunzhe/ci/tmp/npu-locks`，跨运行共享，不能按 run 分开。单次运行的收尾保留共享缓存与锁文件，不递归修改它们的所有权。
+
+源码获取保持原有顺序：A5 直接通过 GitHub API 准备源码；A2 第一次 checkout 先直连，只有失败后才执行原有“启动代理并获取端口”步骤，再按原顺序等待并重试。runner 服务的 GitHub 控制连接继续使用代理；A5 API 和 A2 首次 checkout 的步骤环境会清空继承的 HTTP/HTTPS/ALL/Git 代理变量，并设置 `NO_PROXY=*`，确保这两次源码访问直连。
+
+A2 代理回退读取普通用户配置 `CI_PROXY_SCRIPT=/home/huangjunzhe/ci/vpn-proxy.sh`，调用 `proxyon`，校验变量不含 CR/LF，再通过 `GITHUB_ENV` 将代理地址与端口传递给后续步骤。管理员须提前在两台主机部署 `nelvko/clashctl` 到 `/home/huangjunzhe/ci/clashctl`，并将提供的 `vpn-proxy.sh` 适配副本放到上述位置：运行时配置和二进制路径指向该目录，日志写入 `/home/huangjunzhe/ci/tmp/mihomo.log`，权限允许 `ubuntu` 读取配置、执行二进制和写日志。脚本属于主机部署配置，不提交到仓库；workflow 不读取 `/root`、不修改 `HOME` 或全局 Git 配置。
 
 A2/A5 workflow 固定设置 `CI_JOBS=16` 和 `CI_CPACK_JOBS=16`，全量与局部 OPP 构建均使用 `-j16`。`ci/run_checks.sh` 的默认并行度也为 16，并将该值导出为 PyTorch/Ninja 使用的 `MAX_JOBS`；CPack、CMake 和 Make 使用同一并行度设置，cmake/scripts/prepare.sh 也遵循 CMAKE_BUILD_PARALLEL_LEVEL，避免内部 prepare 阶段重新按 CPU 数放大并行度。`FLA_NPU_BUILD_ARGS` 追加 `-j16`，覆盖 wheel 打包内部再次调用 `build.sh` 时的并行度。
 
-runner 使用普通 `ubuntu` 用户，workflow 全程不调用 `sudo`。管理员须提前授予该用户 Docker daemon 访问权限、所列宿主机目录的读写权限及其父目录的遍历权限；例如首次部署时执行以下命令，之后重新登录 `ubuntu`，使新组生效，再启动 runner 用户服务：
+runner 使用普通 `ubuntu` 用户，workflow 全程不调用 `sudo`。[一键部署工具](https://github.com/alvazu/fla-npu-ci-deploy)负责创建基础数据目录及配置用户服务；首次主机准备可显式启用其 `--setup-host`。管理员须提前授予该用户 Docker daemon 访问权限、所列宿主机目录的读写权限及其父目录的遍历权限；手工准备时可执行以下命令，之后重新登录 `ubuntu`，使新组生效，再启动 runner 用户服务：
 
 ```sh
 sudo groupadd -f fla-npu-ci
@@ -284,7 +290,7 @@ sudo install -d -o ubuntu -g fla-npu-ci -m 2775 \
   /home/huangjunzhe/ci/actions-runner
 ```
 
-容器内部仍使用镜像默认用户执行全局 pip 和 OPP 安装；这与宿主机 runner 以普通用户运行是两个权限范围。手工调用 `ci/run_ci_container.sh` 时，也应显式设置 `CI_TMPDIR`、`CI_HOST_TMPDIR`、`CI_CACHE_ROOT` 和 `CI_NPU_LOCK_DIR`，脚本自身的默认值保持不变。
+容器内部仍使用镜像默认用户执行全局 pip 和 OPP 安装；这与宿主机 runner 以普通用户运行是两个权限范围。手工调用 `ci/run_ci_container.sh` 时，也应显式设置 `TMPDIR`、`CI_TMPDIR`、`CI_HOST_TMPDIR`、`CI_CACHE_ROOT` 和 `CI_NPU_LOCK_DIR`，使用与 Actions 相同的数据目录和设备锁。
 
 ## 第 5 步：验证容器能看到 NPU
 
@@ -344,6 +350,7 @@ torch_npu device_count: 1
 cd "$HOME/flash-linear-attention-npu-ci/context"
 
 # 两个平台共用这些目录配置；与 Actions 共享设备锁和缓存。
+export TMPDIR=/home/huangjunzhe/ci/tmp
 export CI_TMPDIR=/tmp/fla-npu-ci
 export CI_HOST_TMPDIR=/home/huangjunzhe/ci/tmp/manual-container
 export CI_CACHE_ROOT=/home/huangjunzhe/ci/cache_root

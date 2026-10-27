@@ -422,49 +422,23 @@ jobs:
       CI_HOST_TMPDIR: /home/huangjunzhe/ci/tmp/container-${{ matrix.platform }}-${{ github.run_id }}-${{ github.run_attempt }}
       CI_CACHE_ROOT: /home/huangjunzhe/ci/cache_root
       CI_NPU_LOCK_DIR: /home/huangjunzhe/ci/tmp/npu-locks
-      TMPDIR: /home/huangjunzhe/ci/tmp/host-${{ matrix.platform }}-${{ github.run_id }}-${{ github.run_attempt }}
+      TMPDIR: /home/huangjunzhe/ci/tmp
       CI_CONTAINER_NAME: fla-npu-ci-${{ matrix.platform }}-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
-      - name: 检查 runner 权限并准备存储目录
-        run: |
-          set -euo pipefail
-          if ! docker info >/dev/null 2>&1; then
-            echo "[CI][ERROR] The runner user must have Docker access before CI starts; CI does not use sudo." >&2
-            exit 1
-          fi
-          # Repair outputs left by an earlier run before checkout tries to clean.
-          if [[ -d repo && ! -L repo ]] && docker image inspect "$CI_IMAGE" >/dev/null 2>&1; then
-            docker run --rm --network none --entrypoint bash \
-              -v "$PWD/repo:/ci-repo" "$CI_IMAGE" \
-              -c 'chown -Rh -- "$1:$2" /ci-repo' -- "$(id -u)" "$(id -g)"
-          fi
-          for directory in "$TMPDIR" "$CI_HOST_TMPDIR" "$CI_CACHE_ROOT" "$CI_NPU_LOCK_DIR"; do
-            if ! mkdir -p "$directory"; then
-              echo "[CI][ERROR] Provision $directory for the runner user before starting CI." >&2
-              exit 1
-            fi
-            probe="$(mktemp "$directory/.write-check.XXXXXX")"
-            rm -f -- "$probe"
-          done
-
-      - name: 启动代理并获取端口
-        run: |
-          set -euo pipefail
-          source "$CI_PROXY_SCRIPT"
-          proxyon
-          for variable in http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY \
-            no_proxy NO_PROXY GIT_HTTP_PROXY GIT_HTTPS_PROXY PROXY_HTTP_PORT PROXY_SOCKS_PORT PROXY_MIXED_PORT; do
-            value="${!variable-}"
-            if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
-              echo "[CI][ERROR] Proxy variable $variable contains a newline." >&2
-              exit 1
-            fi
-            printf '%s=%s\n' "$variable" "$value" >> "$GITHUB_ENV"
-          done
-
       - name: 通过 GitHub API 准备 A5 源码
         if: matrix.platform == 'a5'
         env:
+          # Runner services inherit proxyon; this source path stays direct.
+          http_proxy: ''
+          https_proxy: ''
+          HTTP_PROXY: ''
+          HTTPS_PROXY: ''
+          all_proxy: ''
+          ALL_PROXY: ''
+          GIT_HTTP_PROXY: ''
+          GIT_HTTPS_PROXY: ''
+          no_proxy: '*'
+          NO_PROXY: '*'
           GITHUB_TOKEN: ${{ github.token }}
           NPU_CI_PR_NUMBER: ${{ needs.prepare.outputs.pr_number }}
           NPU_CI_BASE_REF: ${{ needs.prepare.outputs.base_ref }}
@@ -776,11 +750,39 @@ jobs:
         continue-on-error: true
         timeout-minutes: 5
         uses: actions/checkout@v5
+        env:
+          # Try direct access before enabling the existing A2 proxy fallback.
+          http_proxy: ''
+          https_proxy: ''
+          HTTP_PROXY: ''
+          HTTPS_PROXY: ''
+          all_proxy: ''
+          ALL_PROXY: ''
+          GIT_HTTP_PROXY: ''
+          GIT_HTTPS_PROXY: ''
+          no_proxy: '*'
+          NO_PROXY: '*'
         with:
           repository: ${{ github.repository }}
           ref: ${{ needs.prepare.outputs.base_sha }}
           fetch-depth: 50
           path: repo
+
+      - name: 启动代理并获取端口
+        if: steps.checkout_pr_1.outcome == 'failure' && matrix.platform == 'a2'
+        run: |
+          set -euo pipefail
+          source "$CI_PROXY_SCRIPT"
+          proxyon
+          for variable in http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY \
+            no_proxy NO_PROXY GIT_HTTP_PROXY GIT_HTTPS_PROXY PROXY_HTTP_PORT PROXY_SOCKS_PORT PROXY_MIXED_PORT; do
+            value="${!variable-}"
+            if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+              echo "[CI][ERROR] Proxy variable $variable contains a newline." >&2
+              exit 1
+            fi
+            printf '%s=%s\n' "$variable" "$value" >> "$GITHUB_ENV"
+          done
 
       - name: 等待后重试拉取目标分支代码
         if: matrix.platform == 'a2' && steps.checkout_pr_1.outcome == 'failure'
@@ -930,6 +932,7 @@ jobs:
           # 但 Example/ST 用例配置属于被验证内容：新 PR 中新增或修改的 enabled 用例
           # 必须跟随当前目标分支和 PR head 的现场合并结果一起进入容器，并被 /run-npu-ci quick 实际执行验证。
           case_archive="$(mktemp -d "${TMPDIR}/example-st-cases.XXXXXX")"
+          trap 'rm -rf -- "$case_archive"' EXIT
           export NPU_CI_CASE_ARCHIVE="$case_archive"
           python3 - <<'PY'
           import json
@@ -1003,7 +1006,6 @@ jobs:
           if [ -f "$case_archive/example_st_cases.json" ]; then
             cp "$case_archive/example_st_cases.json" repo/ci/example_st_cases.json
           fi
-          rm -rf "$case_archive"
 
       - name: 运行 ${{ matrix.name }} NPU CI 容器
         id: npu_ci
@@ -1139,22 +1141,6 @@ jobs:
           fi
           exit "$summary_status"
 
-      - name: 恢复 runner 工作目录权限
-        if: always() && steps.npu_ci.outcome != 'skipped'
-        run: |
-          set -euo pipefail
-          docker rm -f "$CI_CONTAINER_NAME" >/dev/null 2>&1 || true
-          if [[ -d repo ]] && docker image inspect "$CI_IMAGE" >/dev/null 2>&1; then
-            # Package/OPP installation needs root inside the image. Return bind-
-            # mounted outputs to the runner so checkout and cleanup need no sudo.
-            docker run --rm --network none \
-              --entrypoint bash \
-              -v "$PWD/repo:/ci-repo" \
-              -v "$CI_HOST_TMPDIR:/ci-tmp" \
-              "$CI_IMAGE" -c 'chown -Rh -- "$1:$2" /ci-repo /ci-tmp' \
-              -- "$(id -u)" "$(id -g)"
-          fi
-
       - name: 清理 ${{ matrix.name }} 临时完整日志
         if: always()
         run: |
@@ -1165,15 +1151,25 @@ jobs:
             "$repo_path"/*) rm -f "$raw_log_path" ;;
             *) echo "[CI][ERROR] Refusing to clean log outside the repository workspace." >&2; exit 1 ;;
           esac
-          for directory in "$CI_HOST_TMPDIR" "$TMPDIR"; do
-            case "$directory" in
-              "/home/huangjunzhe/ci/tmp/container-${CI_ACCURACY_PLATFORM}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"|\
-              "/home/huangjunzhe/ci/tmp/host-${CI_ACCURACY_PLATFORM}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}")
-                [[ ! -L "$directory" ]] || { echo "[CI][ERROR] Refusing to clean a symlink." >&2; exit 1; }
-                rm -rf -- "$directory"
-                ;;
-              *) echo "[CI][ERROR] Refusing to clean an unexpected temporary directory." >&2; exit 1 ;;
-            esac
+          expected_host_tmpdir="/home/huangjunzhe/ci/tmp/container-${CI_ACCURACY_PLATFORM}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          if [[ "$CI_HOST_TMPDIR" != "$expected_host_tmpdir" ]]; then
+            echo "[CI][ERROR] Refusing to clean an unexpected temporary directory." >&2
+            exit 1
+          fi
+          cleanup_directories=("$CI_HOST_TMPDIR")
+          if [[ "$CI_ACCURACY_PLATFORM" == a5 ]]; then
+            archive_dir="${TMPDIR}/fla-npu-source-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            if [[ "$archive_dir" != "/home/huangjunzhe/ci/tmp/fla-npu-source-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" ]]; then
+              echo "[CI][ERROR] Refusing to clean an unexpected source archive directory." >&2
+              exit 1
+            fi
+            cleanup_directories+=("$archive_dir")
+          fi
+          for directory in "${cleanup_directories[@]}"; do
+            [[ ! -L "$directory" ]] || { echo "[CI][ERROR] Refusing to clean a symlink." >&2; exit 1; }
+          done
+          for directory in "${cleanup_directories[@]}"; do
+            rm -rf -- "$directory"
           done
 
       - name: 记录 ${{ matrix.name }} 执行结果
