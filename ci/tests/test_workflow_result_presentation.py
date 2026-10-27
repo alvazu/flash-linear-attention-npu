@@ -812,6 +812,28 @@ globalThis.core = {
         self.assertIn('mount_args+=(-v "$host_tmpdir:$container_tmpdir")', container_script)
         self.assertIn('CI_TMPDIR must be an absolute container path', container_script)
 
+    def test_workflow_env_names_are_unique_ignoring_case(self):
+        # GitHub rejects env keys that differ only in case; PyYAML accepts them.
+        def check_node(node, location):
+            if isinstance(node, yaml.MappingNode):
+                for key, value in node.value:
+                    child_location = f"{location}.{key.value}"
+                    if key.value == "env" and isinstance(value, yaml.MappingNode):
+                        names = [name.value.casefold() for name, _ in value.value]
+                        self.assertEqual(
+                            len(names), len(set(names)),
+                            f"Case-insensitive duplicate env keys at {child_location}",
+                        )
+                    check_node(value, child_location)
+            elif isinstance(node, yaml.SequenceNode):
+                for index, child in enumerate(node.value):
+                    check_node(child, f"{location}[{index}]")
+
+        for path in WORKFLOW_PATH.parent.iterdir():
+            if path.suffix in (".yml", ".yaml"):
+                with self.subTest(workflow=path.name):
+                    check_node(yaml.compose(path.read_text(encoding="utf-8")), path.name)
+
     def test_proxy_fallback_preserves_direct_first_checkout_and_original_retry_order(self):
         job = yaml.safe_load(WORKFLOW_PATH.read_text(encoding="utf-8"))["jobs"]["ascend-npu"]
         self.assertEqual(job["env"]["CI_PROXY_SCRIPT"], "/home/huangjunzhe/ci/vpn-proxy.sh")
@@ -828,10 +850,11 @@ globalThis.core = {
         self.assertNotIn("恢复 runner 工作目录权限", names)
         for step_name in ("通过 GitHub API 准备 A5 源码", "拉取当前目标分支代码（第 1 次）"):
             step = next(step for step in self.matrix_steps if step["name"] == step_name)
-            for variable in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY", "all_proxy", "ALL_PROXY", "GIT_HTTP_PROXY", "GIT_HTTPS_PROXY"):
+            for variable in ("http_proxy", "https_proxy", "all_proxy", "GIT_HTTP_PROXY", "GIT_HTTPS_PROXY"):
                 self.assertEqual(step["env"][variable], "", (step_name, variable))
             self.assertEqual(step["env"]["no_proxy"], "*")
-            self.assertEqual(step["env"]["NO_PROXY"], "*")
+            for variable in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY"):
+                self.assertNotIn(variable, step["env"])
             self.assertNotIn("proxyon", step.get("run", ""))
         for checkout_id in ("checkout_pr_2",):
             retry = next(step for step in self.matrix_steps if step.get("id") == checkout_id)
