@@ -2,7 +2,15 @@
 
 本文面向第一次接触 GitHub Actions self-hosted runner 的维护者，目标是部署本仓库按需触发的 A2 + A5 双平台 NPU CI。一次触发会并行创建 A2、A5 两个设备 job；每个平台内部按顺序执行分项检查，任一平台缺席或失败都不能通过汇总门禁。
 
-示例服务器路径使用 `$HOME/flash-linear-attention-npu-ci`。示例仓库地址使用 `https://github.com/flashserve/flash-linear-attention-npu`。
+本文用 `CI_ROOT` 统一表示宿主机 CI 部署根目录。以 runner 服务账号登录每台主机后，先设置：
+
+```sh
+export CI_ROOT="${CI_ROOT:-$HOME/ci}"
+```
+
+选择只含英文字母、数字、`/`、`.`、`_`、`-` 的绝对路径，供后面的 shell 和 systemd 示例使用。示例仓库地址使用 `https://github.com/flashserve/flash-linear-attention-npu`。
+
+`CI_ROOT` 是教程和部署命令使用的变量。设置它不会自动改变 `ci/run_ci_container.sh` 的默认值或 workflow：实际部署时，须让各 job 的绝对路径配置、临时目录清理校验与同一部署位置一致。一键部署工具也须显式传入 `--ci-root "$CI_ROOT"`。
 
 ## 先看重点
 
@@ -56,7 +64,7 @@
     需要 GitHub 管理员用 `scripts/github/apply_branch_protection.sh` 应用到 GitHub 分支保护规则。
 
 11. **多个 NPU CI 同时触发时有两层保护。**
-    同一 PR 的触发先通过 workflow concurrency 串行化，再由 `prepare` 根据带 `A2+A5` 契约的状态去重。每台 runner 宿主机还会用 `/home/huangjunzhe/ci/tmp/npu-locks/fla-npu-ci-npu-<id>.lock` 对物理 NPU 加锁，避免多个任务抢同一张卡。
+    同一 PR 的触发先通过 workflow concurrency 串行化，再由 `prepare` 根据带 `A2+A5` 契约的状态去重。每台 runner 宿主机还会用 `${CI_ROOT}/tmp/npu-locks/fla-npu-ci-npu-<id>.lock` 对物理 NPU 加锁，避免多个任务抢同一张卡。
 
 12. **CI 容器内日志默认只保留 7 天。**
     每次 NPU CI 容器启动时都会执行 `ci/cleanup_ci_logs.sh`，删除超过 7 天的 CI/Ascend/NPU 日志。这个策略只管理 CI 容器和仓库工作目录里的日志，不等同于 GitHub Actions 网页日志保留时间。
@@ -156,11 +164,13 @@ flowchart TD
 ssh <npu-ci-host>
 ```
 
+登录后，在该主机的 shell 会话中设置开头的 `CI_ROOT`；本地 SSH 之前设置的变量不会自动传入远端。
+
 创建 CI 工作目录：
 
 ```sh
-mkdir -p "$HOME/flash-linear-attention-npu-ci"
-cd "$HOME/flash-linear-attention-npu-ci"
+mkdir -p "${CI_ROOT}"
+cd "${CI_ROOT}"
 ```
 
 源码与 runner 安装在普通用户自己的目录中；编译临时文件和缓存使用下文配置的数据目录，无需创建宿主机 `/workspace`。
@@ -170,7 +180,7 @@ cd "$HOME/flash-linear-attention-npu-ci"
 有 GitHub 访问权限时，直接 clone：
 
 ```sh
-cd "$HOME/flash-linear-attention-npu-ci"
+cd "${CI_ROOT}"
 git clone https://github.com/flashserve/flash-linear-attention-npu.git context
 cd context
 git checkout main
@@ -179,7 +189,7 @@ git checkout main
 如果服务器不能访问 GitHub，也可以从一台能访问 GitHub 的机器把仓库目录同步到：
 
 ```text
-$HOME/flash-linear-attention-npu-ci/context
+${CI_ROOT}/context
 ```
 
 确认关键脚本存在：
@@ -199,7 +209,7 @@ npu-smi info
 再用本仓脚本检查自动选卡结果：
 
 ```sh
-cd "$HOME/flash-linear-attention-npu-ci/context"
+cd "${CI_ROOT}/context"
 bash ci/detect_npu.sh --summary
 ```
 
@@ -240,7 +250,7 @@ CI 会优先尝试健康且空闲的 NPU，然后尝试空闲但健康状态异�
 推荐在 runner 维护窗口从受信任的默认分支构建或加载镜像，再启动 runner。构建命令如下：
 
 ```sh
-cd "$HOME/flash-linear-attention-npu-ci/context"
+cd "${CI_ROOT}/context"
 
 # A2 / arm64
 docker build --platform=linux/arm64 \
@@ -266,28 +276,28 @@ A5 job 固定设置 `CI_REQUIRE_PRELOADED_IMAGE=true`。若 `fla-npu-ci:9.1.0-95
 
 A5 Dockerfile 对 PyTorch 和 `torch_npu` wheel 做 SHA256 校验。默认 Python 包源可通过 `PYPI_INDEX_URL` build arg 覆盖，但不能跳过 wheel 版本和校验和约束。
 
-A2/A5 job 统一设置 `CI_TMPDIR=/tmp/fla-npu-ci`。A5 Triton/BiShengIR 编译器要求临时目录位于容器 `/tmp` 下；不要修改这个容器路径。`CI_HOST_TMPDIR` 把 `/home/huangjunzhe/ci/tmp/container-<platform>-<run>-<attempt>` bind mount 到该路径，由 `ci/run_ci_container.sh` 创建本次目录。宿主机 `TMPDIR` 固定为 `/home/huangjunzhe/ci/tmp`，基础目录由部署脚本提前创建，供源码准备阶段使用。容器中的 `/workspace/repo` 和 `/workspace/gdr_accuracy_golden` 是挂载目标，不要求宿主机存在 `/workspace`。
+A2/A5 job 统一设置 `CI_TMPDIR=/tmp/fla-npu-ci`。A5 Triton/BiShengIR 编译器要求临时目录位于容器 `/tmp` 下；不要修改这个容器路径。`CI_HOST_TMPDIR` 把 `${CI_ROOT}/tmp/container-<platform>-<run>-<attempt>` bind mount 到该路径，由 `ci/run_ci_container.sh` 创建本次目录。宿主机 `TMPDIR` 固定为 `${CI_ROOT}/tmp`，基础目录由部署脚本提前创建，供源码准备阶段使用。容器中的 `/workspace/repo` 和 `/workspace/gdr_accuracy_golden` 是挂载目标，不要求宿主机存在 `/workspace`。
 
 `ci/run_ci_container.sh` 在宿主机注册 `EXIT` 收尾：通过 Docker `--cidfile` 记录本次创建的容器 ID，仅停止该容器，再用无网络 helper 容器将源码及本次 `CI_HOST_TMPDIR` 的所有权归还调用用户，最后释放设备锁。正常退出、失败、中断及 stale-commit 监控提前 `docker rm -f` 的路径均执行收尾；原始非零退出码保留，成功运行后的收尾失败也会使 CI 失败。目录准备与权限收尾都在入口脚本中完成，无需新增 workflow 步骤或宿主机 `sudo`。
 
-现有 workflow 清理步骤只删除本次 `CI_HOST_TMPDIR` 和 A5 的精确源码归档目录 `/home/huangjunzhe/ci/tmp/fla-npu-source-<run>-<attempt>`，并校验目录边界及符号链接。A2 的 Example/ST 配置中转使用 `TMPDIR` 下的独立 `mktemp` 目录，由该步骤自己的 `EXIT` trap 清理。静态 `TMPDIR` 根目录始终保留。
+现有 workflow 清理步骤只删除本次 `CI_HOST_TMPDIR` 和 A5 的精确源码归档目录 `${CI_ROOT}/tmp/fla-npu-source-<run>-<attempt>`，并校验目录边界及符号链接。A2 的 Example/ST 配置中转使用 `TMPDIR` 下的独立 `mktemp` 目录，由该步骤自己的 `EXIT` trap 清理。静态 `TMPDIR` 根目录始终保留。
 
-缓存固定使用 `CI_CACHE_ROOT=/home/huangjunzhe/ci/cache_root`；NPU 锁固定使用 `/home/huangjunzhe/ci/tmp/npu-locks`，跨运行共享，不能按 run 分开。单次运行的收尾保留共享缓存与锁文件，不递归修改它们的所有权。
+缓存固定使用 `CI_CACHE_ROOT=${CI_ROOT}/cache_root`；NPU 锁固定使用 `${CI_ROOT}/tmp/npu-locks`，跨运行共享，不能按 run 分开。单次运行的收尾保留共享缓存与锁文件，不递归修改它们的所有权。
 
 源码获取保持原有顺序：A5 直接通过 GitHub API 准备源码；A2 第一次 checkout 先直连，只有失败后才执行原有“启动代理并获取端口”步骤，再按原顺序等待并重试。runner 服务的 GitHub 控制连接继续使用代理；A5 API 和 A2 首次 checkout 的步骤环境会清空继承的 HTTP/HTTPS/ALL/Git 代理变量，并设置 `NO_PROXY=*`，确保这两次源码访问直连。
 
-A2 代理回退读取普通用户配置 `CI_PROXY_SCRIPT=/home/huangjunzhe/ci/vpn-proxy.sh`，调用 `proxyon`，校验变量不含 CR/LF，再通过 `GITHUB_ENV` 将代理地址与端口传递给后续步骤。管理员须提前在两台主机部署 `nelvko/clashctl` 到 `/home/huangjunzhe/ci/clashctl`，并将提供的 `vpn-proxy.sh` 适配副本放到上述位置：运行时配置和二进制路径指向该目录，日志写入 `/home/huangjunzhe/ci/tmp/mihomo.log`，权限允许 `ubuntu` 读取配置、执行二进制和写日志。脚本属于主机部署配置，不提交到仓库；workflow 不读取 `/root`、不修改 `HOME` 或全局 Git 配置。
+A2 代理回退读取普通用户配置 `CI_PROXY_SCRIPT=${CI_ROOT}/vpn-proxy.sh`，调用 `proxyon`，校验变量不含 CR/LF，再通过 `GITHUB_ENV` 将代理地址与端口传递给后续步骤。管理员须提前在两台主机部署 `nelvko/clashctl` 到 `${CI_ROOT}/clashctl`，并将提供的 `vpn-proxy.sh` 适配副本放到上述位置：运行时配置和二进制路径指向该目录，日志写入 `${CI_ROOT}/tmp/mihomo.log`，权限允许 `ubuntu` 读取配置、执行二进制和写日志。脚本属于主机部署配置，不提交到仓库；workflow 不读取 `/root`、不修改 `HOME` 或全局 Git 配置。
 
 A2/A5 workflow 固定设置 `CI_JOBS=16` 和 `CI_CPACK_JOBS=16`，全量与局部 OPP 构建均使用 `-j16`。`ci/run_checks.sh` 的默认并行度也为 16，并将该值导出为 PyTorch/Ninja 使用的 `MAX_JOBS`；CPack、CMake 和 Make 使用同一并行度设置，cmake/scripts/prepare.sh 也遵循 CMAKE_BUILD_PARALLEL_LEVEL，避免内部 prepare 阶段重新按 CPU 数放大并行度。`FLA_NPU_BUILD_ARGS` 追加 `-j16`，覆盖 wheel 打包内部再次调用 `build.sh` 时的并行度。
 
-runner 使用普通 `ubuntu` 用户，workflow 全程不调用 `sudo`。[一键部署工具](https://github.com/alvazu/fla-npu-ci-deploy)负责创建基础数据目录及配置用户服务；首次主机准备可显式启用其 `--setup-host`。管理员须提前授予该用户 Docker daemon 访问权限、所列宿主机目录的读写权限及其父目录的遍历权限；手工准备时可执行以下命令，之后重新登录 `ubuntu`，使新组生效，再启动 runner 用户服务：
+runner 使用普通 `ubuntu` 用户，workflow 全程不调用 `sudo`。[一键部署工具](https://github.com/alvazu/fla-npu-ci-deploy)负责创建基础数据目录及配置用户服务；在工具仓库中执行 `bash deploy.sh --platform a5 --ci-root "$CI_ROOT" --setup-host` 可显式启用首次主机准备，A2 将平台改为 `a2`。管理员须提前授予该用户 Docker daemon 访问权限、所列宿主机目录的读写权限及其父目录的遍历权限；手工准备时可执行以下命令，之后重新登录 `ubuntu`，使新组生效，再启动 runner 用户服务：
 
 ```sh
 sudo groupadd -f fla-npu-ci
 sudo usermod -aG docker,HwHiAiUser,fla-npu-ci ubuntu
 sudo install -d -o ubuntu -g fla-npu-ci -m 2775 \
-  /home/huangjunzhe/ci/tmp /home/huangjunzhe/ci/cache_root \
-  /home/huangjunzhe/ci/actions-runner
+  "${CI_ROOT}/tmp" "${CI_ROOT}/cache_root" \
+  "${CI_ROOT}/actions-runner"
 ```
 
 容器内部仍使用镜像默认用户执行全局 pip 和 OPP 安装；这与宿主机 runner 以普通用户运行是两个权限范围。手工调用 `ci/run_ci_container.sh` 时，也应显式设置 `TMPDIR`、`CI_TMPDIR`、`CI_HOST_TMPDIR`、`CI_CACHE_ROOT` 和 `CI_NPU_LOCK_DIR`，使用与 Actions 相同的数据目录和设备锁。
@@ -297,7 +307,7 @@ sudo install -d -o ubuntu -g fla-npu-ci -m 2775 \
 先跑一个轻量检查。这里重点验证 `--privileged`、驱动挂载和容器内逻辑设备号：
 
 ```sh
-cd "$HOME/flash-linear-attention-npu-ci/context"
+cd "${CI_ROOT}/context"
 
 # 以下以 A5 为例；A2 改为 fla-npu-ci:9.1.0-910b。
 export CI_IMAGE=fla-npu-ci:9.1.0-950
@@ -347,14 +357,14 @@ torch_npu device_count: 1
 然后跑本仓 CI 入口做一次端到端检查：
 
 ```sh
-cd "$HOME/flash-linear-attention-npu-ci/context"
+cd "${CI_ROOT}/context"
 
 # 两个平台共用这些目录配置；与 Actions 共享设备锁和缓存。
-export TMPDIR=/home/huangjunzhe/ci/tmp
+export TMPDIR="${CI_ROOT}/tmp"
 export CI_TMPDIR=/tmp/fla-npu-ci
-export CI_HOST_TMPDIR=/home/huangjunzhe/ci/tmp/manual-container
-export CI_CACHE_ROOT=/home/huangjunzhe/ci/cache_root
-export CI_NPU_LOCK_DIR=/home/huangjunzhe/ci/tmp/npu-locks
+export CI_HOST_TMPDIR="${CI_ROOT}/tmp/manual-container"
+export CI_CACHE_ROOT="${CI_ROOT}/cache_root"
+export CI_NPU_LOCK_DIR="${CI_ROOT}/tmp/npu-locks"
 
 # A2
 CI_IMAGE=fla-npu-ci:9.1.0-910b \
@@ -436,11 +446,11 @@ bash ci/run_ci_container.sh
 在 A2、A5 NPU 服务器上分别以 `ubuntu` 用户执行：
 
 ```sh
-cd "$HOME/flash-linear-attention-npu-ci/context"
-source /home/huangjunzhe/ci/vpn-proxy.sh
+cd "${CI_ROOT}/context"
+source "${CI_ROOT}/vpn-proxy.sh"
 proxyon
 
-RUNNER_ROOT=/home/huangjunzhe/ci/actions-runner \
+RUNNER_ROOT="${CI_ROOT}/actions-runner" \
 bash ci/setup_self_hosted_runner.sh \
   --url https://github.com/flashserve/flash-linear-attention-npu \
   --token <把刚才复制的 registration token 放这里>
@@ -449,11 +459,11 @@ bash ci/setup_self_hosted_runner.sh \
 上面的默认值用于 A2。A5 必须显式使用独立 runner 名称和完整标签：
 
 ```sh
-cd "$HOME/flash-linear-attention-npu-ci/context"
-source /home/huangjunzhe/ci/vpn-proxy.sh
+cd "${CI_ROOT}/context"
+source "${CI_ROOT}/vpn-proxy.sh"
 proxyon
 
-RUNNER_ROOT=/home/huangjunzhe/ci/actions-runner \
+RUNNER_ROOT="${CI_ROOT}/actions-runner" \
 RUNNER_NAME="$(hostname)-flash-linear-attention-npu-a5" \
 RUNNER_LABELS=linux,x64,npu,ascend950,flash-linear-attention-npu-a5 \
 bash ci/setup_self_hosted_runner.sh \
@@ -464,7 +474,7 @@ bash ci/setup_self_hosted_runner.sh \
 以上示例通过环境变量覆盖安装目录，两台主机分别安装到各自的：
 
 ```text
-/home/huangjunzhe/ci/actions-runner
+${CI_ROOT}/actions-runner
 ```
 
 默认 runner name 是：
@@ -485,17 +495,18 @@ A5 labels 必须是：
 linux,x64,npu,ascend950,flash-linear-attention-npu-a5
 ```
 
-脚本自身的默认安装路径仍为 `/workspace/actions-runner/flash-linear-attention-npu`，部署时使用上面的 `RUNNER_ROOT` 覆盖。注册完成后，以 `ubuntu` 用户创建用户服务：
+脚本自身的默认安装路径仍为 `/workspace/actions-runner/flash-linear-attention-npu`，部署时使用上面的 `RUNNER_ROOT` 覆盖。注册完成后，以 `ubuntu` 用户创建用户服务。下面使用可展开的 here-doc，在生成 unit 时写入绝对路径；systemd 运行时不依赖 shell 中的 `CI_ROOT`：
 
 ```sh
 mkdir -p "$HOME/.config/systemd/user"
-cat > "$HOME/.config/systemd/user/fla-npu-runner.service" <<'EOF'
+RUNNER_ROOT="${CI_ROOT}/actions-runner"
+cat > "$HOME/.config/systemd/user/fla-npu-runner.service" <<EOF
 [Unit]
 Description=Flash Linear Attention NPU GitHub Actions runner
 
 [Service]
-WorkingDirectory=/home/huangjunzhe/ci/actions-runner
-ExecStart=/bin/bash -c 'source /home/huangjunzhe/ci/vpn-proxy.sh; proxyon; exec /home/huangjunzhe/ci/actions-runner/bin/runsvc.sh'
+WorkingDirectory=${RUNNER_ROOT}
+ExecStart=/bin/bash -c 'source "${CI_ROOT}/vpn-proxy.sh"; proxyon; exec "${RUNNER_ROOT}/bin/runsvc.sh"'
 Restart=always
 RestartSec=5
 KillMode=process
@@ -521,7 +532,7 @@ Settings -> Actions -> Runners
 先在服务器上看 runner 目录：
 
 ```sh
-cd /home/huangjunzhe/ci/actions-runner
+cd "${CI_ROOT}/actions-runner"
 ls
 ```
 
@@ -547,7 +558,7 @@ journalctl --user -u fla-npu-runner.service -n 200 --no-pager
 如果没有安装服务，可以前台运行看日志：
 
 ```sh
-cd /home/huangjunzhe/ci/actions-runner
+cd "${CI_ROOT}/actions-runner"
 ./run.sh
 ```
 
@@ -562,9 +573,9 @@ cd /home/huangjunzhe/ci/actions-runner
 重新注册示例：
 
 ```sh
-cd "$HOME/flash-linear-attention-npu-ci/context"
+cd "${CI_ROOT}/context"
 
-RUNNER_ROOT=/home/huangjunzhe/ci/actions-runner \
+RUNNER_ROOT="${CI_ROOT}/actions-runner" \
 RUNNER_LABELS=linux,arm64,npu,flash-linear-attention-npu \
 bash ci/setup_self_hosted_runner.sh \
   --url https://github.com/flashserve/flash-linear-attention-npu \
@@ -580,7 +591,7 @@ bash ci/setup_self_hosted_runner.sh \
 推荐使用脚本应用分支保护：
 
 ```sh
-cd "$HOME/flash-linear-attention-npu-ci/context"
+cd "${CI_ROOT}/context"
 
 export GITHUB_TOKEN=<具有仓库 Administration 写权限的 GitHub token>
 bash scripts/github/apply_branch_protection.sh main
@@ -681,13 +692,13 @@ PR 评论区也会出现或更新一条机器人评论，包含触发人、模�
 
 如果当前 head commit 已经有 NPU CI 处于排队或运行中，重复评论也会跳过，不会再启动新的 self-hosted runner job。机器人评论会更新为“已在运行”，并指向已有 Actions run。
 
-不同 PR 或不同 commit 的 NPU CI 可以同时被触发。每次触发都会分别调度一个 A2 job 和一个 A5 job；真正到各 runner 宿主机执行时，`ci/run_ci_container.sh` 会为选中的物理 NPU 加文件锁，workflow 将锁目录设为 `/home/huangjunzhe/ci/tmp/npu-locks`。如果所有候选 NPU 都被锁住，job 会等待并重试。
+不同 PR 或不同 commit 的 NPU CI 可以同时被触发。每次触发都会分别调度一个 A2 job 和一个 A5 job；真正到各 runner 宿主机执行时，`ci/run_ci_container.sh` 会为选中的物理 NPU 加文件锁，workflow 将锁目录设为 `${CI_ROOT}/tmp/npu-locks`。如果所有候选 NPU 都被锁住，job 会等待并重试。
 
 锁相关环境变量：
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `CI_NPU_LOCK_DIR` | `/tmp`（脚本默认） | workflow 覆盖为 `/home/huangjunzhe/ci/tmp/npu-locks` |
+| `CI_NPU_LOCK_DIR` | `/tmp`（脚本默认） | workflow 覆盖为 `${CI_ROOT}/tmp/npu-locks` |
 | `CI_NPU_LOCK_WAIT_SECONDS` | `14400` | 等待空闲 NPU 锁的最长时间，`0` 表示一直等待 |
 | `CI_NPU_LOCK_RETRY_SECONDS` | `10` | 所有 NPU 都被锁住时的重试间隔 |
 
@@ -819,8 +830,8 @@ Custom OPP op_api lib: /usr/local/Ascend/.../opp/vendors/fla_npu_transformer/op_
 不同 PR 或不同 commit 同时触发时，GitHub Actions 可能把它们分配给不同 self-hosted runner。runner 宿主机会用 `flock` 给物理 NPU 加锁，避免多个任务抢同一张卡。workflow 使用的锁文件如下：
 
 ```text
-/home/huangjunzhe/ci/tmp/npu-locks/fla-npu-ci-npu-0.lock
-/home/huangjunzhe/ci/tmp/npu-locks/fla-npu-ci-npu-1.lock
+${CI_ROOT}/tmp/npu-locks/fla-npu-ci-npu-0.lock
+${CI_ROOT}/tmp/npu-locks/fla-npu-ci-npu-1.lock
 ```
 
 如果所有候选 NPU 都被锁住，job 会输出：
