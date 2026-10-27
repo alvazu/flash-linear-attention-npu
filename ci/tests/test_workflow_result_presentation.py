@@ -988,6 +988,50 @@ rm() { record_command rm "$@"; }
                     self.assertTrue(all(item[0] == "rm" for item in records[3:]))
                     self.assertTrue(Path(env["CI_CACHE_ROOT"]).is_dir())
 
+    @unittest.skipUnless(os.name == "posix" and shutil.which("bash") and shutil.which("make"), "Linux make test")
+    def test_prepare_build_honors_ci_parallelism_and_preserves_default(self):
+        wrapper = r"""
+cat() {
+    if [[ "$1" == /proc/cpuinfo ]]; then
+        printf 'processor : 0\nprocessor : 1\nprocessor : 2\nprocessor : 3\n'
+    else
+        command cat "$@"
+    fi
+}
+cmake() {
+    "$CI_TEST_PYTHON" - <<'PY'
+from pathlib import Path
+Path("Makefile").write_text("prepare_build:\n\t@printf '%s\\n' '$(MAKEFLAGS)' > \"$$CI_TEST_MAKE_LOG\"\n")
+PY
+}
+export -f cat cmake
+exec bash "$CI_TEST_PREPARE_SCRIPT" -s "$CI_TEST_SOURCE" -b "$CI_TEST_BUILD"
+"""
+        for parallelism, expected in ((None, 8), ("", 8), ("16", 16)):
+            with self.subTest(parallelism=parallelism), tempfile.TemporaryDirectory() as temp_dir:
+                root = Path(temp_dir)
+                make_log = root / "make-flags"
+                env = os.environ.copy()
+                env.pop("CMAKE_BUILD_PARALLEL_LEVEL", None)
+                env.update(
+                    MAKEFLAGS="-j64",
+                    CI_TEST_PYTHON=sys.executable,
+                    CI_TEST_PREPARE_SCRIPT=str(REPO_ROOT / "cmake/scripts/prepare.sh"),
+                    CI_TEST_SOURCE=str(REPO_ROOT),
+                    CI_TEST_BUILD=str(root / "build"),
+                    CI_TEST_MAKE_LOG=str(make_log),
+                )
+                if parallelism is not None:
+                    env["CMAKE_BUILD_PARALLEL_LEVEL"] = parallelism
+                completed = subprocess.run(
+                    ["bash", "-c", wrapper], env=env,
+                    text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                flags = shlex.split(make_log.read_text(encoding="utf-8"))
+                self.assertIn(f"-j{expected}", flags)
+                self.assertNotIn("-j64", flags)
+
     @unittest.skipUnless(os.name == "posix" and shutil.which("bash"), "Linux shell is required")
     def test_default_parallelism_reaches_opp_build_and_adapter_ninja_environment(self):
         fixture = (REPO_ROOT / "ci/tests/test_run_checks_stage_pipeline.sh").read_text(encoding="utf-8")
