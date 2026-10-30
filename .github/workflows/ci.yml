@@ -416,6 +416,7 @@ jobs:
       CI_DOCKERFILE: ${{ matrix.dockerfile }}
       CI_REQUIRE_PRELOADED_IMAGE: ${{ matrix.require_preloaded_image }}
       CI_TMPDIR: ${{ matrix.tmpdir }}
+      CI_NPU_LOCK_DIR: /home/huangjunzhe/ci/tmp/npu-locks
     steps:
       - name: 通过 GitHub API 准备 A5 源码
         if: matrix.platform == 'a5'
